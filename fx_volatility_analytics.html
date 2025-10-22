@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Volatility Trading Analytics</title>
+
+    <!-- SheetJS for Excel handling -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
+    <!-- Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .upload-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .upload-box {
+            background: white;
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-box:hover {
+            border-color: #764ba2;
+            background: #f8f9ff;
+        }
+
+        .upload-box.uploaded {
+            border-color: #28a745;
+            background: #f0fff4;
+        }
+
+        .upload-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .upload-box input[type="file"] {
+            display: none;
+        }
+
+        .config-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .config-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .config-item label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+        }
+
+        .config-item select,
+        .config-item input {
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 10px 5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-export {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-export:hover {
+            background: #218838;
+        }
+
+        .results {
+            padding: 30px;
+            display: none;
+        }
+
+        .results.active {
+            display: block;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e9ecef;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 15px 30px;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            font-size: 16px;
+            font-weight: 600;
+            color: #6c757d;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            color: #667eea;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .card h3 {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+
+        .card .value {
+            font-size: 2em;
+            font-weight: 700;
+        }
+
+        .card.positive {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+
+        .card.negative {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+
+        .pnl-table {
+            overflow-x: auto;
+            margin-bottom: 30px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        thead {
+            background: #667eea;
+            color: white;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        th {
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+            cursor: pointer;
+        }
+
+        .pnl-positive {
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .pnl-negative {
+            color: #dc3545;
+            font-weight: 600;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 30px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 1000px;
+            max-height: 80vh;
+            overflow-y: auto;
+            animation: slideIn 0.3s;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .close {
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            color: #aaa;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .close:hover {
+            color: #000;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            border: 1px solid #f5c6cb;
+        }
+
+        .info-box {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            border: 1px solid #bee5eb;
+        }
+
+        .ranking-table {
+            margin-top: 20px;
+        }
+
+        .rank-number {
+            font-weight: 700;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>FX Volatility Trading Analytics</h1>
+            <p>P&L Analysis for Option Buying with Delta Hedging</p>
+        </div>
+
+        <div class="controls">
+            <div class="upload-section">
+                <div class="upload-box" id="spotUploadBox" onclick="document.getElementById('spotFile').click()">
+                    <h3>Upload Spot Price Data</h3>
+                    <p>Excel file with timestamp and prices for each currency pair</p>
+                    <p style="font-size: 0.9em; color: #6c757d; margin-top: 10px;">Columns: Timestamp, EURUSD, USDJPY, GBPUSD, ...</p>
+                    <input type="file" id="spotFile" accept=".xlsx,.xls,.csv">
+                </div>
+
+                <div class="upload-box" id="volUploadBox" onclick="document.getElementById('volFile').click()">
+                    <h3>Upload Implied Volatility Data</h3>
+                    <p>Excel file with implied vols by strike and tenor</p>
+                    <p style="font-size: 0.9em; color: #6c757d; margin-top: 10px;">Columns: Pair, Strike, Tenor, ImpliedVol</p>
+                    <input type="file" id="volFile" accept=".xlsx,.xls,.csv">
+                </div>
+            </div>
+
+            <div class="config-section">
+                <div class="config-item">
+                    <label for="hedgeFrequency">Hedge Frequency</label>
+                    <select id="hedgeFrequency">
+                        <option value="10">10 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">1 hour</option>
+                        <option value="360">6 hours</option>
+                    </select>
+                </div>
+
+                <div class="config-item">
+                    <label for="optionType">Option Type</label>
+                    <select id="optionType">
+                        <option value="call">Call</option>
+                        <option value="put">Put</option>
+                        <option value="both">Both (Call & Put)</option>
+                    </select>
+                </div>
+
+                <div class="config-item">
+                    <label for="strikes">Strikes to Analyze</label>
+                    <select id="strikes" multiple style="height: 100px;">
+                        <option value="ATM" selected>ATM (At-The-Money)</option>
+                        <option value="25DP" selected>25-Delta Put</option>
+                        <option value="25DC" selected>25-Delta Call</option>
+                        <option value="10DP">10-Delta Put</option>
+                        <option value="10DC">10-Delta Call</option>
+                    </select>
+                </div>
+
+                <div class="config-item">
+                    <label for="tenors">Tenors</label>
+                    <select id="tenors" multiple style="height: 100px;">
+                        <option value="1D" selected>Overnight (1D)</option>
+                        <option value="1W" selected>1 Week</option>
+                        <option value="2W">2 Weeks</option>
+                        <option value="1M">1 Month</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <button class="btn btn-primary" id="calculateBtn" onclick="runAnalysis()" disabled>
+                    Calculate P&L Analysis
+                </button>
+                <button class="btn btn-export" id="exportBtn" onclick="exportToExcel()" style="display: none;">
+                    Export Results to Excel
+                </button>
+            </div>
+
+            <div class="info-box">
+                <strong>Key Settings:</strong>
+                <ul style="margin-top: 10px; margin-left: 20px;">
+                    <li>Buying perspective (long options)</li>
+                    <li>Zero interest rates (r=0) for short-dated options</li>
+                    <li>Notional: 100 million USD equivalent for all pairs</li>
+                    <li>P&L is the PRIMARY metric for trading decisions</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="loading" id="loadingDiv">
+            <div class="spinner"></div>
+            <h3>Calculating P&L Analysis...</h3>
+            <p>This may take a moment for large datasets</p>
+        </div>
+
+        <div class="results" id="resultsDiv">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('pnl')">P&L Analysis</button>
+                <button class="tab" onclick="switchTab('vol')">Volatility Comparison</button>
+                <button class="tab" onclick="switchTab('ranking')">P&L Rankings</button>
+            </div>
+
+            <div class="tab-content active" id="pnl-tab">
+                <div class="summary-cards" id="summaryCards"></div>
+                <div class="chart-container">
+                    <canvas id="pnlChart"></canvas>
+                </div>
+                <div class="pnl-table">
+                    <h2 style="margin-bottom: 15px;">P&L by Currency Pair & Strike</h2>
+                    <p style="color: #6c757d; margin-bottom: 15px;">Click any row to view P&L evolution over time</p>
+                    <table id="pnlTable">
+                        <thead>
+                            <tr>
+                                <th>Currency Pair</th>
+                                <th>Strike</th>
+                                <th>Option Type</th>
+                                <th>Tenor</th>
+                                <th>Premium Paid</th>
+                                <th>Hedge P&L</th>
+                                <th>Intrinsic Value</th>
+                                <th>Total P&L</th>
+                                <th>Implied Vol</th>
+                                <th>Realized Vol</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pnlTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="tab-content" id="vol-tab">
+                <div class="chart-container">
+                    <canvas id="volChart"></canvas>
+                </div>
+                <div class="info-box">
+                    <strong>Note:</strong> While realized vs implied volatility provides useful context,
+                    P&L is the ultimate metric. High realized volatility doesn't guarantee profit if
+                    spot moves away from the strike (low gamma region).
+                </div>
+            </div>
+
+            <div class="tab-content" id="ranking-tab">
+                <h2 style="margin-bottom: 20px;">Top Profitable Trades</h2>
+                <div class="ranking-table">
+                    <table id="topTradesTable">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Currency Pair</th>
+                                <th>Strike</th>
+                                <th>Option Type</th>
+                                <th>P&L</th>
+                                <th>Realized Vol</th>
+                                <th>Implied Vol</th>
+                                <th>Vol Diff</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topTradesBody"></tbody>
+                    </table>
+                </div>
+
+                <h2 style="margin: 40px 0 20px 0;">Worst Performing Trades</h2>
+                <div class="ranking-table">
+                    <table id="worstTradesTable">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Currency Pair</th>
+                                <th>Strike</th>
+                                <th>Option Type</th>
+                                <th>P&L</th>
+                                <th>Realized Vol</th>
+                                <th>Implied Vol</th>
+                                <th>Vol Diff</th>
+                            </tr>
+                        </thead>
+                        <tbody id="worstTradesBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for P&L Path Visualization -->
+    <div id="pnlPathModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2 id="modalTitle">P&L Evolution</h2>
+            <div class="chart-container" style="height: 500px;">
+                <canvas id="pnlPathChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let spotData = null;
+        let volData = null;
+        let analysisResults = null;
+
+        // File upload handlers
+        document.getElementById('spotFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    spotData = XLSX.utils.sheet_to_json(firstSheet);
+
+                    document.getElementById('spotUploadBox').classList.add('uploaded');
+                    document.getElementById('spotUploadBox').querySelector('p').textContent =
+                        `✓ Loaded ${spotData.length} rows`;
+
+                    checkReadyToCalculate();
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        document.getElementById('volFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    volData = XLSX.utils.sheet_to_json(firstSheet);
+
+                    document.getElementById('volUploadBox').classList.add('uploaded');
+                    document.getElementById('volUploadBox').querySelector('p').textContent =
+                        `✓ Loaded ${volData.length} rows`;
+
+                    checkReadyToCalculate();
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        function checkReadyToCalculate() {
+            if (spotData && volData) {
+                document.getElementById('calculateBtn').disabled = false;
+            }
+        }
+
+        // Black-Scholes implementation with r=0
+        function normalCDF(x) {
+            // Approximation of cumulative normal distribution
+            const t = 1 / (1 + 0.2316419 * Math.abs(x));
+            const d = 0.3989423 * Math.exp(-x * x / 2);
+            const prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+            return x > 0 ? 1 - prob : prob;
+        }
+
+        function blackScholesCall(S, K, T, sigma, r = 0) {
+            if (T <= 0) {
+                return {
+                    price: Math.max(S - K, 0),
+                    delta: S > K ? 1 : 0
+                };
+            }
+
+            const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+            const d2 = d1 - sigma * Math.sqrt(T);
+
+            const price = S * normalCDF(d1) - K * Math.exp(-r * T) * normalCDF(d2);
+            const delta = normalCDF(d1);
+
+            return { price, delta };
+        }
+
+        function blackScholesPut(S, K, T, sigma, r = 0) {
+            if (T <= 0) {
+                return {
+                    price: Math.max(K - S, 0),
+                    delta: S < K ? -1 : 0
+                };
+            }
+
+            const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+            const d2 = d1 - sigma * Math.sqrt(T);
+
+            const price = K * Math.exp(-r * T) * normalCDF(-d2) - S * normalCDF(-d1);
+            const delta = normalCDF(d1) - 1;
+
+            return { price, delta };
+        }
+
+        // Calculate realized volatility
+        function calculateRealizedVol(prices, frequencyMinutes) {
+            const returns = [];
+            for (let i = 1; i < prices.length; i++) {
+                returns.push(Math.log(prices[i] / prices[i - 1]));
+            }
+
+            const variance = returns.reduce((sum, r) => sum + r * r, 0) / returns.length;
+
+            // Annualize: periods per year = (365 * 24 * 60) / frequencyMinutes
+            const periodsPerYear = (365 * 24 * 60) / frequencyMinutes;
+            const annualizedVol = Math.sqrt(variance * periodsPerYear);
+
+            return annualizedVol;
+        }
+
+        // Get notional based on currency pair
+        function getNotionalInfo(pair, spotRate) {
+            const baseCcy = pair.substring(0, 3);
+            const quoteCcy = pair.substring(3, 6);
+
+            // Standard: 100 million in quote currency
+            const quoteNotional = 100000000;
+            const baseNotional = quoteNotional / spotRate;
+
+            return {
+                baseNotional,
+                quoteNotional,
+                pnlCurrency: quoteCcy,
+                baseCcy,
+                quoteCcy
+            };
+        }
+
+        // Simulate delta hedging and calculate P&L
+        function simulateDeltaHedging(spotPrices, timestamps, strike, tenor, impliedVol, optionType, frequencyMinutes) {
+            const tenorDays = parseTenor(tenor);
+            const T = tenorDays / 365; // Time to expiry in years
+
+            const pair = Object.keys(spotPrices[0]).filter(k => k !== 'Timestamp' && k !== 'timestamp')[0];
+            const initialSpot = spotPrices[0][pair];
+            const notionalInfo = getNotionalInfo(pair, initialSpot);
+
+            // Calculate initial option price
+            const bsFunc = optionType === 'call' ? blackScholesCall : blackScholesPut;
+            const initialOption = bsFunc(initialSpot, strike, T, impliedVol);
+            const premiumPerUnit = initialOption.price;
+            const totalPremium = premiumPerUnit * notionalInfo.baseNotional;
+
+            // Track P&L evolution
+            const pnlPath = [];
+            let cumulativeHedgePnL = 0;
+            let currentDeltaPosition = 0;
+            let previousSpot = initialSpot;
+
+            // Initial hedge
+            currentDeltaPosition = initialOption.delta * notionalInfo.baseNotional;
+
+            pnlPath.push({
+                timestamp: timestamps[0],
+                spot: initialSpot,
+                optionMTM: premiumPerUnit * notionalInfo.baseNotional,
+                hedgePnL: 0,
+                totalPnL: 0,
+                delta: initialOption.delta
+            });
+
+            // Simulate hedging at specified frequency
+            for (let i = 1; i < spotPrices.length; i++) {
+                const currentSpot = spotPrices[i][pair];
+                const timeElapsed = i * (frequencyMinutes / 60 / 24 / 365); // in years
+                const timeRemaining = Math.max(T - timeElapsed, 0);
+
+                // Calculate P&L from previous hedge position
+                const hedgePnLThisPeriod = -currentDeltaPosition * (currentSpot - previousSpot);
+                cumulativeHedgePnL += hedgePnLThisPeriod;
+
+                // Calculate new option value
+                let optionMTM;
+                let newDelta;
+
+                if (timeRemaining > 0) {
+                    const currentOption = bsFunc(currentSpot, strike, timeRemaining, impliedVol);
+                    optionMTM = currentOption.price * notionalInfo.baseNotional;
+                    newDelta = currentOption.delta;
+                } else {
+                    // At expiry
+                    if (optionType === 'call') {
+                        optionMTM = Math.max(currentSpot - strike, 0) * notionalInfo.baseNotional;
+                    } else {
+                        optionMTM = Math.max(strike - currentSpot, 0) * notionalInfo.baseNotional;
+                    }
+                    newDelta = 0;
+                }
+
+                // Update delta position
+                currentDeltaPosition = newDelta * notionalInfo.baseNotional;
+                previousSpot = currentSpot;
+
+                // Calculate total P&L
+                const totalPnL = -totalPremium + cumulativeHedgePnL + optionMTM;
+
+                pnlPath.push({
+                    timestamp: timestamps[i],
+                    spot: currentSpot,
+                    optionMTM,
+                    hedgePnL: cumulativeHedgePnL,
+                    totalPnL,
+                    delta: newDelta
+                });
+            }
+
+            // Calculate realized volatility
+            const prices = spotPrices.map(row => row[pair]);
+            const realizedVol = calculateRealizedVol(prices, frequencyMinutes);
+
+            // Final results
+            const lastPoint = pnlPath[pnlPath.length - 1];
+            const intrinsicValue = lastPoint.optionMTM;
+
+            return {
+                pair,
+                strike,
+                optionType,
+                tenor,
+                premium: totalPremium,
+                hedgePnL: lastPoint.hedgePnL,
+                intrinsicValue,
+                totalPnL: lastPoint.totalPnL,
+                impliedVol,
+                realizedVol,
+                pnlPath,
+                notionalInfo
+            };
+        }
+
+        function parseTenor(tenor) {
+            const map = {
+                '1D': 1,
+                '1W': 7,
+                '2W': 14,
+                '1M': 30
+            };
+            return map[tenor] || 1;
+        }
+
+        // Main analysis function
+        function runAnalysis() {
+            document.getElementById('loadingDiv').classList.add('active');
+            document.getElementById('resultsDiv').classList.remove('active');
+
+            setTimeout(() => {
+                try {
+                    const hedgeFrequency = parseInt(document.getElementById('hedgeFrequency').value);
+                    const optionTypeSelection = document.getElementById('optionType').value;
+                    const selectedStrikes = Array.from(document.getElementById('strikes').selectedOptions).map(o => o.value);
+                    const selectedTenors = Array.from(document.getElementById('tenors').selectedOptions).map(o => o.value);
+
+                    const results = [];
+
+                    // Get currency pairs from spot data
+                    const pairs = Object.keys(spotData[0]).filter(k => k !== 'Timestamp' && k !== 'timestamp');
+
+                    // Extract timestamps
+                    const timestamps = spotData.map(row => row.Timestamp || row.timestamp);
+
+                    // For each pair, strike, and tenor combination
+                    for (const pair of pairs) {
+                        const initialSpot = spotData[0][pair];
+
+                        for (const strikeType of selectedStrikes) {
+                            for (const tenor of selectedTenors) {
+                                // Find implied vol from vol data
+                                const volEntry = volData.find(v =>
+                                    v.Pair === pair && v.Strike === strikeType && v.Tenor === tenor
+                                );
+
+                                if (!volEntry) continue;
+
+                                const impliedVol = volEntry.ImpliedVol / 100; // Convert from percentage
+                                const strike = getStrikePrice(initialSpot, strikeType, impliedVol, parseTenor(tenor) / 365);
+
+                                // Determine which option types to run
+                                const optionTypes = optionTypeSelection === 'both' ?
+                                    ['call', 'put'] : [optionTypeSelection];
+
+                                for (const optType of optionTypes) {
+                                    const result = simulateDeltaHedging(
+                                        spotData,
+                                        timestamps,
+                                        strike,
+                                        tenor,
+                                        impliedVol,
+                                        optType,
+                                        hedgeFrequency
+                                    );
+
+                                    results.push(result);
+                                }
+                            }
+                        }
+                    }
+
+                    analysisResults = results;
+                    displayResults(results);
+
+                    document.getElementById('loadingDiv').classList.remove('active');
+                    document.getElementById('resultsDiv').classList.add('active');
+                    document.getElementById('exportBtn').style.display = 'inline-block';
+
+                } catch (error) {
+                    document.getElementById('loadingDiv').classList.remove('active');
+                    alert('Error during analysis: ' + error.message);
+                    console.error(error);
+                }
+            }, 100);
+        }
+
+        function getStrikePrice(spot, strikeType, vol, T) {
+            if (strikeType === 'ATM') return spot;
+
+            // Delta-based strikes (simplified - using approximation)
+            const sqrtT = Math.sqrt(T);
+
+            if (strikeType === '25DC') {
+                return spot * Math.exp(0.675 * vol * sqrtT);
+            } else if (strikeType === '25DP') {
+                return spot * Math.exp(-0.675 * vol * sqrtT);
+            } else if (strikeType === '10DC') {
+                return spot * Math.exp(1.28 * vol * sqrtT);
+            } else if (strikeType === '10DP') {
+                return spot * Math.exp(-1.28 * vol * sqrtT);
+            }
+
+            return spot;
+        }
+
+        // Display results
+        function displayResults(results) {
+            // Calculate summary statistics
+            const totalPnL = results.reduce((sum, r) => sum + r.totalPnL, 0);
+            const avgPnL = totalPnL / results.length;
+            const profitableTrades = results.filter(r => r.totalPnL > 0).length;
+            const avgRealizedVol = results.reduce((sum, r) => sum + r.realizedVol, 0) / results.length;
+
+            // Display summary cards
+            const summaryHTML = `
+                <div class="card ${totalPnL >= 0 ? 'positive' : 'negative'}">
+                    <h3>Total P&L</h3>
+                    <div class="value">${formatNumber(totalPnL)}</div>
+                </div>
+                <div class="card">
+                    <h3>Average P&L per Trade</h3>
+                    <div class="value ${avgPnL >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                        ${formatNumber(avgPnL)}
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Profitable Trades</h3>
+                    <div class="value">${profitableTrades} / ${results.length}</div>
+                </div>
+                <div class="card">
+                    <h3>Avg Realized Vol</h3>
+                    <div class="value">${(avgRealizedVol * 100).toFixed(2)}%</div>
+                </div>
+            `;
+            document.getElementById('summaryCards').innerHTML = summaryHTML;
+
+            // Display P&L table
+            displayPnLTable(results);
+
+            // Display charts
+            displayPnLChart(results);
+            displayVolChart(results);
+            displayRankings(results);
+        }
+
+        function displayPnLTable(results) {
+            const tbody = document.getElementById('pnlTableBody');
+            tbody.innerHTML = '';
+
+            results.forEach((result, index) => {
+                const row = document.createElement('tr');
+                row.onclick = () => showPnLPath(result);
+
+                row.innerHTML = `
+                    <td>${result.pair}</td>
+                    <td>${result.strike.toFixed(4)}</td>
+                    <td style="text-transform: capitalize;">${result.optionType}</td>
+                    <td>${result.tenor}</td>
+                    <td>${formatNumber(result.premium)}</td>
+                    <td class="${result.hedgePnL >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                        ${formatNumber(result.hedgePnL)}
+                    </td>
+                    <td>${formatNumber(result.intrinsicValue)}</td>
+                    <td class="${result.totalPnL >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                        ${formatNumber(result.totalPnL)}
+                    </td>
+                    <td>${(result.impliedVol * 100).toFixed(2)}%</td>
+                    <td>${(result.realizedVol * 100).toFixed(2)}%</td>
+                `;
+
+                tbody.appendChild(row);
+            });
+        }
+
+        function displayPnLChart(results) {
+            const ctx = document.getElementById('pnlChart').getContext('2d');
+
+            // Aggregate P&L by currency pair
+            const pnlByPair = {};
+            results.forEach(r => {
+                if (!pnlByPair[r.pair]) pnlByPair[r.pair] = 0;
+                pnlByPair[r.pair] += r.totalPnL;
+            });
+
+            if (window.pnlChartInstance) {
+                window.pnlChartInstance.destroy();
+            }
+
+            window.pnlChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(pnlByPair),
+                    datasets: [{
+                        label: 'Total P&L by Currency Pair',
+                        data: Object.values(pnlByPair),
+                        backgroundColor: Object.values(pnlByPair).map(v =>
+                            v >= 0 ? 'rgba(40, 167, 69, 0.7)' : 'rgba(220, 53, 69, 0.7)'
+                        ),
+                        borderColor: Object.values(pnlByPair).map(v =>
+                            v >= 0 ? 'rgba(40, 167, 69, 1)' : 'rgba(220, 53, 69, 1)'
+                        ),
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: 'P&L by Currency Pair',
+                            font: { size: 18 }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'P&L (Unitless)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function displayVolChart(results) {
+            const ctx = document.getElementById('volChart').getContext('2d');
+
+            if (window.volChartInstance) {
+                window.volChartInstance.destroy();
+            }
+
+            window.volChartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: 'Realized vs Implied Volatility',
+                        data: results.map(r => ({
+                            x: r.impliedVol * 100,
+                            y: r.realizedVol * 100,
+                            pair: r.pair,
+                            pnl: r.totalPnL
+                        })),
+                        backgroundColor: results.map(r =>
+                            r.totalPnL >= 0 ? 'rgba(40, 167, 69, 0.6)' : 'rgba(220, 53, 69, 0.6)'
+                        ),
+                        borderColor: results.map(r =>
+                            r.totalPnL >= 0 ? 'rgba(40, 167, 69, 1)' : 'rgba(220, 53, 69, 1)'
+                        ),
+                        borderWidth: 2,
+                        pointRadius: 6
+                    },
+                    {
+                        label: '45-degree line (Realized = Implied)',
+                        data: [{x: 0, y: 0}, {x: 100, y: 100}],
+                        type: 'line',
+                        borderColor: 'rgba(108, 117, 125, 0.5)',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Realized vs Implied Volatility (Green = Profit, Red = Loss)',
+                            font: { size: 18 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    if (context.datasetIndex === 0) {
+                                        const point = context.raw;
+                                        return [
+                                            `Pair: ${point.pair}`,
+                                            `Implied: ${point.x.toFixed(2)}%`,
+                                            `Realized: ${point.y.toFixed(2)}%`,
+                                            `P&L: ${formatNumber(point.pnl)}`
+                                        ];
+                                    }
+                                    return '';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Implied Volatility (%)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Realized Volatility (%)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function displayRankings(results) {
+            // Sort by P&L
+            const sortedResults = [...results].sort((a, b) => b.totalPnL - a.totalPnL);
+
+            // Top 5
+            const topTrades = sortedResults.slice(0, 5);
+            const topBody = document.getElementById('topTradesBody');
+            topBody.innerHTML = '';
+
+            topTrades.forEach((result, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="rank-number">${index + 1}</td>
+                    <td>${result.pair}</td>
+                    <td>${result.strike.toFixed(4)}</td>
+                    <td style="text-transform: capitalize;">${result.optionType}</td>
+                    <td class="pnl-positive">${formatNumber(result.totalPnL)}</td>
+                    <td>${(result.realizedVol * 100).toFixed(2)}%</td>
+                    <td>${(result.impliedVol * 100).toFixed(2)}%</td>
+                    <td class="${result.realizedVol > result.impliedVol ? 'pnl-positive' : 'pnl-negative'}">
+                        ${((result.realizedVol - result.impliedVol) * 100).toFixed(2)}%
+                    </td>
+                `;
+                topBody.appendChild(row);
+            });
+
+            // Bottom 5
+            const worstTrades = sortedResults.slice(-5).reverse();
+            const worstBody = document.getElementById('worstTradesBody');
+            worstBody.innerHTML = '';
+
+            worstTrades.forEach((result, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="rank-number">${index + 1}</td>
+                    <td>${result.pair}</td>
+                    <td>${result.strike.toFixed(4)}</td>
+                    <td style="text-transform: capitalize;">${result.optionType}</td>
+                    <td class="pnl-negative">${formatNumber(result.totalPnL)}</td>
+                    <td>${(result.realizedVol * 100).toFixed(2)}%</td>
+                    <td>${(result.impliedVol * 100).toFixed(2)}%</td>
+                    <td class="${result.realizedVol > result.impliedVol ? 'pnl-positive' : 'pnl-negative'}">
+                        ${((result.realizedVol - result.impliedVol) * 100).toFixed(2)}%
+                    </td>
+                `;
+                worstBody.appendChild(row);
+            });
+        }
+
+        // Show P&L path modal
+        function showPnLPath(result) {
+            document.getElementById('modalTitle').textContent =
+                `P&L Evolution: ${result.pair} - ${result.strike.toFixed(4)} ${result.optionType.toUpperCase()}`;
+
+            const modal = document.getElementById('pnlPathModal');
+            modal.style.display = 'block';
+
+            const ctx = document.getElementById('pnlPathChart').getContext('2d');
+
+            if (window.pnlPathChartInstance) {
+                window.pnlPathChartInstance.destroy();
+            }
+
+            const timestamps = result.pnlPath.map((p, i) => i);
+
+            window.pnlPathChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [
+                        {
+                            label: 'Total P&L',
+                            data: result.pnlPath.map(p => p.totalPnL),
+                            borderColor: 'rgb(102, 126, 234)',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 3,
+                            fill: true
+                        },
+                        {
+                            label: 'Cumulative Hedge P&L',
+                            data: result.pnlPath.map(p => p.hedgePnL),
+                            borderColor: 'rgb(40, 167, 69)',
+                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                            borderWidth: 2,
+                            fill: false
+                        },
+                        {
+                            label: 'Option MTM',
+                            data: result.pnlPath.map(p => p.optionMTM),
+                            borderColor: 'rgb(255, 193, 7)',
+                            backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                            borderWidth: 2,
+                            fill: false
+                        },
+                        {
+                            label: 'Premium Paid',
+                            data: result.pnlPath.map(p => -result.premium),
+                            borderColor: 'rgb(220, 53, 69)',
+                            backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: 'P&L Components Over Time',
+                            font: { size: 16 }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time Period'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'P&L (Unitless)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function closeModal() {
+            document.getElementById('pnlPathModal').style.display = 'none';
+        }
+
+        // Tab switching
+        function switchTab(tabName) {
+            // Remove active class from all tabs and content
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            // Add active class to selected tab
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+        }
+
+        // Export to Excel
+        function exportToExcel() {
+            if (!analysisResults) return;
+
+            // Prepare summary data
+            const summaryData = analysisResults.map(r => ({
+                'Currency Pair': r.pair,
+                'Strike': r.strike.toFixed(4),
+                'Option Type': r.optionType,
+                'Tenor': r.tenor,
+                'Premium Paid': r.premium.toFixed(2),
+                'Hedge P&L': r.hedgePnL.toFixed(2),
+                'Intrinsic Value': r.intrinsicValue.toFixed(2),
+                'Total P&L': r.totalPnL.toFixed(2),
+                'Implied Vol (%)': (r.impliedVol * 100).toFixed(2),
+                'Realized Vol (%)': (r.realizedVol * 100).toFixed(2),
+                'Vol Diff (%)': ((r.realizedVol - r.impliedVol) * 100).toFixed(2)
+            }));
+
+            // Create workbook
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(summaryData);
+            XLSX.utils.book_append_sheet(wb, ws, "P&L Summary");
+
+            // Add detailed P&L paths
+            for (let i = 0; i < Math.min(analysisResults.length, 10); i++) {
+                const result = analysisResults[i];
+                const pathData = result.pnlPath.map((p, idx) => ({
+                    'Period': idx,
+                    'Timestamp': p.timestamp || '',
+                    'Spot': p.spot.toFixed(4),
+                    'Delta': p.delta.toFixed(4),
+                    'Option MTM': p.optionMTM.toFixed(2),
+                    'Hedge P&L': p.hedgePnL.toFixed(2),
+                    'Total P&L': p.totalPnL.toFixed(2)
+                }));
+
+                const pathWs = XLSX.utils.json_to_sheet(pathData);
+                const sheetName = `${result.pair}_${result.optionType}`.substring(0, 31);
+                XLSX.utils.book_append_sheet(wb, pathWs, sheetName);
+            }
+
+            // Save file
+            XLSX.writeFile(wb, 'FX_Volatility_Analysis.xlsx');
+        }
+
+        // Utility functions
+        function formatNumber(num) {
+            return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('pnlPathModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
