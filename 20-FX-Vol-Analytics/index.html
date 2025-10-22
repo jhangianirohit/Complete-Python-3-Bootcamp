@@ -588,6 +588,7 @@
 
     const sigma0 = effectiveSigma(baseSigma, totalTau, totalTau, 0, option.tenorHours, config.variance);
     let deltaPrev = bsDelta(S0, strike, sigma0, totalTau, option.optionType);
+    let previousSpot = S0;
     pnlPath.push({
       time: times[0],
       hedge: 0,
@@ -597,24 +598,31 @@
     });
 
     for (let i = 1; i < prices.length; i++) {
-      const spotChange = prices[i] - prices[i - 1];
-      hedgePnl += (-deltaPrev * notional) * spotChange;
+      const spot = prices[i];
+      const spotPrev = previousSpot;
+      const spotChange = spot - spotPrev;
+      const hedgeUnitsBase = deltaPrev * notional / spotPrev;
+      const stepHedgePnl = -hedgeUnitsBase * spotChange;
+      hedgePnl += stepHedgePnl;
       const elapsedHours = (times[i] - times[0]) / (1000 * 60 * 60);
       const remainingTau = Math.max((expiryTime - times[i]) / (1000 * 60 * 60 * 24 * 365), 0);
       const sigmaEff = effectiveSigma(baseSigma, remainingTau, totalTau, elapsedHours, option.tenorHours, config.variance);
-      const optionValueUnit = bsPrice(prices[i], strike, sigmaEff, remainingTau, option.optionType);
+      const optionValueUnit = bsPrice(spot, strike, sigmaEff, remainingTau, option.optionType);
       const mtm = optionValueUnit * notional;
       const totalPnl = -premiumCash + hedgePnl + mtm;
-      const deltaNew = bsDelta(prices[i], strike, sigmaEff, remainingTau, option.optionType);
+      const deltaNew = bsDelta(spot, strike, sigmaEff, remainingTau, option.optionType);
+      const deltaChange = deltaNew - deltaPrev;
       records.push({
         time: times[i],
-        spot: prices[i],
+        spot,
         deltaPrev,
+        hedgeUnitsBase,
         spotChange,
-        stepHedgePnl: (-deltaPrev * notional) * spotChange,
+        stepHedgePnl,
         cumulativeHedge: hedgePnl,
         optionMtm: mtm,
-        totalPnl
+        totalPnl,
+        deltaChange
       });
       pnlPath.push({
         time: times[i],
@@ -624,6 +632,7 @@
         premium: premiumCash
       });
       deltaPrev = deltaNew;
+      previousSpot = spot;
     }
 
     const finalSpot = prices[prices.length - 1];
@@ -839,7 +848,7 @@
     const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
 
-    const detailData = [['Pair', 'Strike', 'Tenor (h)', 'Type', 'Timestamp', 'Spot', 'Delta (prev)', 'Spot Δ', 'Step Hedge P&L', 'Cumulative Hedge', 'Option MTM', 'Total P&L']];
+    const detailData = [['Pair', 'Strike', 'Tenor (h)', 'Type', 'Timestamp', 'Spot', 'Delta (prev)', 'Hedge Units (base)', 'Spot Δ', 'Step Hedge P&L', 'Cumulative Hedge', 'Option MTM', 'Total P&L']];
     results.forEach(res => {
       res.hedgeRecords.forEach(rec => {
         detailData.push([
@@ -850,6 +859,7 @@
           new Date(rec.time).toISOString(),
           rec.spot,
           rec.deltaPrev,
+          rec.hedgeUnitsBase,
           rec.spotChange,
           rec.stepHedgePnl,
           rec.cumulativeHedge,

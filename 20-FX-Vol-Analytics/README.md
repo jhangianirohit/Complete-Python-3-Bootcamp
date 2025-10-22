@@ -5,16 +5,16 @@ Using the required long-option perspective and r = 0, the example below follows 
 
 | Time (h) | Spot  | Tau (yrs) | σ (kept at 10%) | Delta | Hedge action (Δ) | Hedge P&L vs expiry (USD) | Cum. hedge P&L (USD) |
 |---------:|:------|:----------|:----------------|:------|:-----------------|--------------------------:|---------------------:|
-| 0        | 1.1000 | 0.002740 | 0.1000          | 0.5010 | Sell 0.5010 × 100m | -350,730.85 | -350,730.85 |
-| 6        | 1.1050 | 0.002055 | 0.1000          | 0.8420 | Sell 0.3410 × 100m | -68,192.81 | -418,923.67 |
-| 12       | 1.0950 | 0.001370 | 0.1000          | 0.1095 | Buy 0.7325 × 100m  | +878,980.93 | +460,057.26 |
-| 18       | 1.1020 | 0.000685 | 0.1000          | 0.7566 | Sell 0.6471 × 100m | -323,537.45 | +136,519.81 |
-| 24       | 1.1070 | 0        | –               | 1.0000 | Buy 0.2434 × 100m  |       0.00 | +136,519.81 |
+| 0        | 1.1000 | 0.002740 | 0.1000          | 0.5010 | Sell 0.5010 × 100m | -318,846.23 | -318,846.23 |
+| 6        | 1.1050 | 0.002055 | 0.1000          | 0.8420 | Sell 0.3410 × 100m | -61,712.95 | -380,559.18 |
+| 12       | 1.0950 | 0.001370 | 0.1000          | 0.1095 | Buy 0.7325 × 100m  | +802,722.31 | +422,163.12 |
+| 18       | 1.1020 | 0.000685 | 0.1000          | 0.7566 | Sell 0.6471 × 100m | -293,591.15 | +128,571.97 |
+| 24       | 1.1070 | 0        | –               | 1.0000 | Buy 0.2434 × 100m  |       0.00 | +128,571.97 |
 
 - **Premium paid at t=0:** 0.00229697 × 100m = 229,697.26 USD
-- **Hedge gains/losses:** Sum of expiry-referenced hedge P&Ls (–350,730.85 – 68,192.81 + 878,980.93 – 323,537.45) = +136,519.81 USD
+- **Hedge gains/losses:** Sum of expiry-referenced hedge P&Ls (–318,846.23 – 61,712.95 + 802,722.31 – 293,591.15) = +128,571.97 USD
 - **Intrinsic value at expiry:** max(1.1070 – 1.1000, 0) × 100m = 700,000.00 USD
-- **Total P&L:** -Premium + Hedge P&L + Intrinsic = -229,697.26 + 136,519.81 + 700,000.00 = **+606,822.55 USD**
+- **Total P&L:** -Premium + Hedge P&L + Intrinsic = -229,697.26 + 128,571.97 + 700,000.00 = **+598,874.71 USD**
 
 For path-dependent monitoring before expiry you can still track `P&L(t) = -Premium_paid + Cumulative_hedge_P&L(t) + Option_MTM(t)` using the running delta-hedge P&L and option mark-to-market at each hedge timestamp.
 
