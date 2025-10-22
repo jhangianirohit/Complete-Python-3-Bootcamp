@@ -47,6 +47,7 @@ The remainder of this README explains how to run the in-browser prototype once b
 3. Upload the implied volatility workbook:
    - First sheet only is processed.
    - Required columns (case-insensitive): `pair`, `option_type` (`Call`/`Put`), `tenor_hours` (or `tenor_days`), `strike_label`, `implied_vol` (decimal, 0.10 = 10%).
+   - `strike_label` is the bucket shown in the heatmap/ranking (e.g. `ATM`, `25D Call`, `10D Put`). If the column is left blank the app auto-labels using the provided strike/delta: `ATM` for ~50Δ, `25ΔC`/`25ΔP` for delta buckets, or `K=1.1050` when only an absolute strike exists.
    - Optional: `strike` (explicit strike) or `delta_target` (to back out the strike).
    - Any additional commentary columns are ignored.
 4. Choose the currency pairs and strike buckets to analyse (leave empty to take all), select hedging frequency (10, 30, or 60 minutes), and pick the variance decay model.
@@ -71,6 +72,7 @@ The remainder of this README explains how to run the in-browser prototype once b
 - Spot prices are assumed to be clean post any Monday-market filtering; pre-processing should remove stale values.
 - If spot data ends before a tenor expires, that trade is flagged and excluded.
 - All P&L values are shown both in the underlying currency (per the notional convention) and implicitly as a unitless number by dividing by 100 million.
+- The browser loads SheetJS' `xlsx.full.min.js` automatically. If your environment blocks CDNs, download that file and place it alongside `index.html` so the local fallback is picked up.
 
 ### Future Enhancements
 - Incorporate transaction costs and slippage controls.
