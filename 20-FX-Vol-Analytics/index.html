@@ -541,17 +541,20 @@
     return times;
   }
 
-  function annualisedRealisedVol(prices, hoursBetween) {
-    if (prices.length < 2) return 0;
-    const returns = [];
+  function annualisedRealisedVol(prices, times) {
+    if (prices.length < 2 || times.length !== prices.length) return 0;
+    let sumSquares = 0;
+    let totalHours = 0;
     for (let i = 1; i < prices.length; i++) {
+      const dtHours = (times[i] - times[i - 1]) / (1000 * 60 * 60);
+      if (dtHours <= 0) continue;
       const r = Math.log(prices[i] / prices[i - 1]);
-      returns.push(r);
+      sumSquares += r * r;
+      totalHours += dtHours;
     }
-    const variance = returns.reduce((acc, r) => acc + r * r, 0) / returns.length;
-    const T = (hoursBetween * returns.length);
-    if (T <= 0) return 0;
-    return Math.sqrt(variance * 365 * 24 / T);
+    if (totalHours <= 0) return 0;
+    const annualFactor = (365 * 24) / totalHours;
+    return Math.sqrt(sumSquares * annualFactor);
   }
 
   function simulateOption(option, spotSeries, config) {
@@ -627,7 +630,7 @@
     const intrinsicUnit = bsPrice(finalSpot, strike, 0, 0, option.optionType);
     const intrinsicCash = intrinsicUnit * notional;
     const totalPnl = -premiumCash + hedgePnl + intrinsicCash;
-    const realisedVol = annualisedRealisedVol(prices, config.hedgeMinutes / 60);
+    const realisedVol = annualisedRealisedVol(prices, times);
 
     return {
       pair: option.pair,

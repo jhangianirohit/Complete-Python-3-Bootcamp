@@ -1,32 +1,31 @@
 # FX Volatility Trading Analytics Prototype
 
 ## P&L Delta-Hedging Mockup (Call, 1-Day Tenor)
-Using the required long-option perspective and r = 0, the example below follows a 100 million USD notional EURUSD call with strike 1.1000, initial spot 1.1000, implied volatility 10% (annualised), tenor 24 hours, and hedging every six hours. Spot path (in USD per EUR): 1.1000 → 1.1050 → 1.0950 → 1.1020 → 1.1070.
+Using the required long-option perspective and r = 0, the example below follows a 100 million USD notional EURUSD call with strike 1.1000, initial spot 1.1000, **constant** implied volatility 10% (annualised), tenor 24 hours, and hedging every six hours. Spot path (in USD per EUR): 1.1000 → 1.1050 → 1.0950 → 1.1020 → 1.1070.
 
-| Time (h) | Spot | Tau (yrs) | Sigma eff. | Delta | Spot Δ | Hedge P&L (USD) | Cum. Hedge P&L (USD) | Option MTM (USD) | Running P&L (USD) |
-|---------:|------|-----------|------------|-------|--------|-----------------|----------------------|------------------|-------------------|
-| 0        | 1.1000 | 0.002740 | 0.1000 | 0.5010 | – | – | – | 229,697.26 | -229,697.26 |
-| 6        | 1.1050 | 0.002055 | 0.0857 | 0.8420 | +0.0050 | -250,522.04 | -250,522.04 | 409,694.28 | -70,525.02 |
-| 12       | 1.0950 | 0.001370 | 0.0700 | 0.1095 | -0.0100 | +842,008.15 | +591,486.11 | 78,515.23 | +440,304.08 |
-| 18       | 1.1020 | 0.000685 | 0.0495 | 0.7566 | +0.0070 | -76,666.83 | +514,819.28 | 267,153.96 | +552,275.98 |
-| 24       | 1.1070 | 0        | – | 1.0000 | +0.0050 | -378,299.47 | +136,519.81 | 700,000.00 | **+606,822.54** |
+| Time (h) | Spot  | Tau (yrs) | σ (kept at 10%) | Delta | Hedge action (Δ) | Hedge P&L vs expiry (USD) | Cum. hedge P&L (USD) |
+|---------:|:------|:----------|:----------------|:------|:-----------------|--------------------------:|---------------------:|
+| 0        | 1.1000 | 0.002740 | 0.1000          | 0.5010 | Sell 0.5010 × 100m | -350,730.85 | -350,730.85 |
+| 6        | 1.1050 | 0.002055 | 0.1000          | 0.8420 | Sell 0.3410 × 100m | -68,192.81 | -418,923.67 |
+| 12       | 1.0950 | 0.001370 | 0.1000          | 0.1095 | Buy 0.7325 × 100m  | +878,980.93 | +460,057.26 |
+| 18       | 1.1020 | 0.000685 | 0.1000          | 0.7566 | Sell 0.6471 × 100m | -323,537.45 | +136,519.81 |
+| 24       | 1.1070 | 0        | –               | 1.0000 | Buy 0.2434 × 100m  |       0.00 | +136,519.81 |
 
 - **Premium paid at t=0:** 0.00229697 × 100m = 229,697.26 USD
-- **Hedge gains/losses:** Sum of step P&Ls (–250,522.04 + 842,008.15 – 76,666.83 – 378,299.47) = +136,519.81 USD
+- **Hedge gains/losses:** Sum of expiry-referenced hedge P&Ls (–350,730.85 – 68,192.81 + 878,980.93 – 323,537.45) = +136,519.81 USD
 - **Intrinsic value at expiry:** max(1.1070 – 1.1000, 0) × 100m = 700,000.00 USD
-- **Total P&L:** -Premium + Hedge P&L + Intrinsic = -229,697.26 + 136,519.81 + 700,000.00 = **+606,822.54 USD**
-- **P&L(t) illustration:** `P&L(t) = -Premium_paid + Cumulative_hedge_P&L(t) + Option_MTM(t)`
+- **Total P&L:** -Premium + Hedge P&L + Intrinsic = -229,697.26 + 136,519.81 + 700,000.00 = **+606,822.55 USD**
 
-The numbers above were validated with a short Python calculation (see development notes in `chunk c3d558†L1-L26`).
+For path-dependent monitoring before expiry you can still track `P&L(t) = -Premium_paid + Cumulative_hedge_P&L(t) + Option_MTM(t)` using the running delta-hedge P&L and option mark-to-market at each hedge timestamp.
 
 ### Realised Volatility Example
-With four six-hour log returns from the same path, variance = 4.1078e-05 and the annualised realised vol is:
+Using the same four six-hour log returns, the **sum of squared returns** is 0.000164313. For a one-day horizon (24 hours ≈ 1/365 years) the annualised realised volatility is:
 
 ```
-σ_realised = sqrt(var × 365 × 24 / 24) = 12.24%
+σ_realised = sqrt((∑ r_i²) × 365) = 24.49%
 ```
 
-(See calculation output `chunk 85b7b1†L1-L10`).
+This matches the standard realised-variance definition `∑ r_i² / Δt_years` where `Δt_years = 1/365` for a 24-hour sample.
 
 ### Notional Standardisation Logic
 - Quote currency is USD (e.g. EURUSD, GBPUSD): **use 100 million USD notional**; P&L reported in USD.
