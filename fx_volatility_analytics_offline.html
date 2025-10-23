@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Volatility Analytics - Offline Version</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .upload-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .upload-box {
+            background: white;
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .upload-box:hover {
+            border-color: #764ba2;
+            background: #f8f9ff;
+        }
+
+        .upload-box.uploaded {
+            border-color: #28a745;
+            background: #f0fff4;
+        }
+
+        .upload-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .upload-box input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .results {
+            padding: 30px;
+            display: none;
+        }
+
+        .results.active {
+            display: block;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background: #667eea;
+            color: white;
+        }
+
+        .pnl-positive {
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .pnl-negative {
+            color: #dc3545;
+            font-weight: 600;
+        }
+
+        .status-message {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .debug-output {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>FX Volatility Analytics</h1>
+            <p>Offline CSV Version - No Internet Required</p>
+        </div>
+
+        <div class="controls">
+            <div class="status-message status-info">
+                <strong>📱 Mac-Friendly Offline Version</strong><br>
+                This version works completely offline and uses CSV files instead of Excel.
+            </div>
+
+            <div class="upload-section">
+                <div class="upload-box" id="spotUploadBox" onclick="document.getElementById('spotFile').click()">
+                    <h3>Upload Spot Price Data (CSV)</h3>
+                    <p>CSV file with Timestamp and EURUSD columns</p>
+                    <input type="file" id="spotFile" accept=".csv">
+                </div>
+
+                <div class="upload-box" id="volUploadBox" onclick="document.getElementById('volFile').click()">
+                    <h3>Upload Implied Vol Data (CSV)</h3>
+                    <p>CSV file with Pair, Strike, Tenor, ImpliedVol</p>
+                    <input type="file" id="volFile" accept=".csv">
+                </div>
+            </div>
+
+            <div style="text-align: center;">
+                <button class="btn btn-primary" id="calculateBtn" onclick="runAnalysis()" disabled>
+                    Calculate P&L Analysis
+                </button>
+            </div>
+
+            <div id="debugOutput" class="debug-output" style="display: none;"></div>
+        </div>
+
+        <div class="results" id="resultsDiv">
+            <h2>Results</h2>
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>Pair</th>
+                        <th>Strike</th>
+                        <th>Option Type</th>
+                        <th>Premium Paid</th>
+                        <th>Hedge P&L</th>
+                        <th>Intrinsic Value</th>
+                        <th>Total P&L</th>
+                        <th>Implied Vol</th>
+                        <th>Realized Vol</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let spotData = null;
+        let volData = null;
+        let debugLog = [];
+
+        function log(message) {
+            console.log(message);
+            debugLog.push(message);
+            const debugDiv = document.getElementById('debugOutput');
+            debugDiv.style.display = 'block';
+            debugDiv.innerHTML = debugLog.join('<br>');
+            debugDiv.scrollTop = debugDiv.scrollHeight;
+        }
+
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const data = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',');
+                const row = {};
+                headers.forEach((header, index) => {
+                    const value = values[index]?.trim();
+                    // Try to parse as number, otherwise keep as string
+                    row[header] = isNaN(value) ? value : parseFloat(value);
+                });
+                data.push(row);
+            }
+
+            return data;
+        }
+
+        document.getElementById('spotFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            log('📁 Spot file selected: ' + file.name);
+
+            if (file) {
+                const reader = new FileReader();
+
+                reader.onerror = function() {
+                    log('❌ Error reading spot file');
+                    alert('Error reading spot file');
+                };
+
+                reader.onload = function(e) {
+                    try {
+                        log('📊 Processing spot CSV file...');
+                        const text = e.target.result;
+                        spotData = parseCSV(text);
+
+                        log('✅ Spot data loaded: ' + spotData.length + ' rows');
+                        log('📋 Columns: ' + Object.keys(spotData[0]).join(', '));
+                        log('🔍 First row: ' + JSON.stringify(spotData[0]));
+
+                        document.getElementById('spotUploadBox').classList.add('uploaded');
+                        document.getElementById('spotUploadBox').querySelector('p').textContent =
+                            '✓ Loaded ' + spotData.length + ' rows';
+
+                        checkReadyToCalculate();
+                    } catch (error) {
+                        log('❌ Error processing spot file: ' + error.message);
+                        alert('Error processing spot file: ' + error.message);
+                    }
+                };
+
+                reader.readAsText(file);
+            }
+        });
+
+        document.getElementById('volFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            log('📁 Vol file selected: ' + file.name);
+
+            if (file) {
+                const reader = new FileReader();
+
+                reader.onerror = function() {
+                    log('❌ Error reading vol file');
+                    alert('Error reading vol file');
+                };
+
+                reader.onload = function(e) {
+                    try {
+                        log('📊 Processing vol CSV file...');
+                        const text = e.target.result;
+                        volData = parseCSV(text);
+
+                        log('✅ Vol data loaded: ' + volData.length + ' rows');
+                        log('📋 Columns: ' + Object.keys(volData[0]).join(', '));
+                        log('🔍 First row: ' + JSON.stringify(volData[0]));
+
+                        document.getElementById('volUploadBox').classList.add('uploaded');
+                        document.getElementById('volUploadBox').querySelector('p').textContent =
+                            '✓ Loaded ' + volData.length + ' rows';
+
+                        checkReadyToCalculate();
+                    } catch (error) {
+                        log('❌ Error processing vol file: ' + error.message);
+                        alert('Error processing vol file: ' + error.message);
+                    }
+                };
+
+                reader.readAsText(file);
+            }
+        });
+
+        function checkReadyToCalculate() {
+            if (spotData && volData) {
+                log('✅ Both files loaded! Ready to calculate.');
+                document.getElementById('calculateBtn').disabled = false;
+            }
+        }
+
+        // Normal CDF approximation
+        function normalCDF(x) {
+            const t = 1 / (1 + 0.2316419 * Math.abs(x));
+            const d = 0.3989423 * Math.exp(-x * x / 2);
+            const prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+            return x > 0 ? 1 - prob : prob;
+        }
+
+        function blackScholesCall(S, K, T, sigma) {
+            if (T <= 0) {
+                return {
+                    price: Math.max(S - K, 0),
+                    delta: S > K ? 1 : 0
+                };
+            }
+
+            const d1 = (Math.log(S / K) + 0.5 * sigma * sigma * T) / (sigma * Math.sqrt(T));
+            const d2 = d1 - sigma * Math.sqrt(T);
+            const price = S * normalCDF(d1) - K * normalCDF(d2);
+            const delta = normalCDF(d1);
+
+            return { price, delta };
+        }
+
+        function calculateRealizedVol(prices) {
+            const returns = [];
+            for (let i = 1; i < prices.length; i++) {
+                returns.push(Math.log(prices[i] / prices[i - 1]));
+            }
+
+            const variance = returns.reduce((sum, r) => sum + r * r, 0) / returns.length;
+
+            // Annualize: 10-minute data, so 6 periods per hour, 24 hours per day, 365 days per year
+            const periodsPerYear = 365 * 24 * 6;
+            return Math.sqrt(variance * periodsPerYear);
+        }
+
+        function runAnalysis() {
+            log('🚀 Starting P&L analysis...');
+
+            try {
+                // Get the currency pair column (should be EURUSD)
+                const pair = Object.keys(spotData[0]).find(k => k !== 'Timestamp' && k !== 'timestamp');
+                log('💱 Analyzing pair: ' + pair);
+
+                // Extract spot prices
+                const spots = spotData.map(row => row[pair]);
+                const initialSpot = spots[0];
+                log('📈 Initial spot: ' + initialSpot.toFixed(4));
+                log('📉 Final spot: ' + spots[spots.length - 1].toFixed(4));
+
+                // Calculate realized vol
+                const realizedVol = calculateRealizedVol(spots);
+                log('📊 Realized vol: ' + (realizedVol * 100).toFixed(2) + '%');
+
+                // Get ATM vol data
+                const atmVol = volData.find(v => v.Pair === pair && v.Strike === 'ATM');
+                if (!atmVol) {
+                    throw new Error('ATM vol not found for ' + pair);
+                }
+
+                const impliedVol = atmVol.ImpliedVol / 100;
+                log('📊 Implied vol: ' + (impliedVol * 100).toFixed(2) + '%');
+
+                // Calculate for 1D option
+                const T = 1 / 365; // 1 day in years
+                const strike = initialSpot; // ATM
+                const notionalUSD = 100000000;
+                const notionalBase = notionalUSD / initialSpot;
+
+                log('💰 Notional: $' + notionalUSD.toLocaleString() + ' = ' + notionalBase.toLocaleString() + ' ' + pair.substring(0, 3));
+
+                // Initial option price
+                const initialOption = blackScholesCall(initialSpot, strike, T, impliedVol);
+                const premium = initialOption.price * notionalBase;
+                log('💵 Premium paid: $' + premium.toLocaleString());
+
+                // Simulate delta hedging
+                let cumulativeHedgePnL = 0;
+                let deltaPosition = initialOption.delta * notionalBase;
+                let prevSpot = initialSpot;
+
+                for (let i = 1; i < spots.length; i++) {
+                    const currentSpot = spots[i];
+                    const timeElapsed = i / spots.length;
+                    const timeRemaining = Math.max(T * (1 - timeElapsed), 0);
+
+                    // Hedge P&L
+                    const hedgePnL = -deltaPosition * (currentSpot - prevSpot);
+                    cumulativeHedgePnL += hedgePnL;
+
+                    // New delta
+                    if (timeRemaining > 0) {
+                        const currentOption = blackScholesCall(currentSpot, strike, timeRemaining, impliedVol);
+                        deltaPosition = currentOption.delta * notionalBase;
+                    } else {
+                        deltaPosition = 0;
+                    }
+
+                    prevSpot = currentSpot;
+                }
+
+                // Final intrinsic value
+                const finalSpot = spots[spots.length - 1];
+                const intrinsic = Math.max(finalSpot - strike, 0) * notionalBase;
+                const totalPnL = -premium + cumulativeHedgePnL + intrinsic;
+
+                log('💰 Hedge P&L: $' + cumulativeHedgePnL.toLocaleString());
+                log('💰 Intrinsic value: $' + intrinsic.toLocaleString());
+                log('💰 Total P&L: $' + totalPnL.toLocaleString());
+
+                // Display results
+                const tbody = document.getElementById('resultsBody');
+                tbody.innerHTML = `
+                    <tr>
+                        <td>${pair}</td>
+                        <td>${strike.toFixed(4)}</td>
+                        <td>Call</td>
+                        <td>$${premium.toFixed(0)}</td>
+                        <td class="${cumulativeHedgePnL >= 0 ? 'pnl-positive' : 'pnl-negative'}">$${cumulativeHedgePnL.toFixed(0)}</td>
+                        <td>$${intrinsic.toFixed(0)}</td>
+                        <td class="${totalPnL >= 0 ? 'pnl-positive' : 'pnl-negative'}">$${totalPnL.toFixed(0)}</td>
+                        <td>${(impliedVol * 100).toFixed(2)}%</td>
+                        <td>${(realizedVol * 100).toFixed(2)}%</td>
+                    </tr>
+                `;
+
+                document.getElementById('resultsDiv').classList.add('active');
+                log('✅ Analysis complete!');
+
+            } catch (error) {
+                log('❌ Error during analysis: ' + error.message);
+                alert('Error during analysis: ' + error.message);
+                console.error(error);
+            }
+        }
+    </script>
+</body>
+</html>
