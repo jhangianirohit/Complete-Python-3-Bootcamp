@@ -1,0 +1,4 @@
+Pair,Strike,Tenor,ImpliedVol
+EURUSD,ATM,1D,10.0
+EURUSD,25DP,1D,11.5
+EURUSD,25DC,1D,10.5

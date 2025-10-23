@@ -594,19 +594,45 @@
         // File upload handlers
         document.getElementById('spotFile').addEventListener('change', function(e) {
             const file = e.target.files[0];
+            console.log('Spot file selected:', file?.name);
+
             if (file) {
                 const reader = new FileReader();
+
+                reader.onerror = function() {
+                    console.error('Error reading spot file');
+                    alert('Error reading spot file. Please try again.');
+                };
+
                 reader.onload = function(e) {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    spotData = XLSX.utils.sheet_to_json(firstSheet);
+                    try {
+                        console.log('Processing spot file...');
 
-                    document.getElementById('spotUploadBox').classList.add('uploaded');
-                    document.getElementById('spotUploadBox').querySelector('p').textContent =
-                        `✓ Loaded ${spotData.length} rows`;
+                        // Check if XLSX library is loaded
+                        if (typeof XLSX === 'undefined') {
+                            throw new Error('XLSX library not loaded. Check internet connection.');
+                        }
 
-                    checkReadyToCalculate();
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, {type: 'array'});
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        spotData = XLSX.utils.sheet_to_json(firstSheet);
+
+                        console.log('Spot data loaded:', spotData.length, 'rows');
+                        console.log('Columns:', Object.keys(spotData[0]));
+                        console.log('First row:', spotData[0]);
+
+                        document.getElementById('spotUploadBox').classList.add('uploaded');
+                        document.getElementById('spotUploadBox').querySelector('p').textContent =
+                            `✓ Loaded ${spotData.length} rows`;
+
+                        checkReadyToCalculate();
+                    } catch (error) {
+                        console.error('Error processing spot file:', error);
+                        alert('Error processing spot file: ' + error.message);
+                        document.getElementById('spotUploadBox').querySelector('p').textContent =
+                            'Error loading file. See console for details.';
+                    }
                 };
                 reader.readAsArrayBuffer(file);
             }
@@ -614,19 +640,45 @@
 
         document.getElementById('volFile').addEventListener('change', function(e) {
             const file = e.target.files[0];
+            console.log('Vol file selected:', file?.name);
+
             if (file) {
                 const reader = new FileReader();
+
+                reader.onerror = function() {
+                    console.error('Error reading vol file');
+                    alert('Error reading vol file. Please try again.');
+                };
+
                 reader.onload = function(e) {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                    volData = XLSX.utils.sheet_to_json(firstSheet);
+                    try {
+                        console.log('Processing vol file...');
 
-                    document.getElementById('volUploadBox').classList.add('uploaded');
-                    document.getElementById('volUploadBox').querySelector('p').textContent =
-                        `✓ Loaded ${volData.length} rows`;
+                        // Check if XLSX library is loaded
+                        if (typeof XLSX === 'undefined') {
+                            throw new Error('XLSX library not loaded. Check internet connection.');
+                        }
 
-                    checkReadyToCalculate();
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, {type: 'array'});
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        volData = XLSX.utils.sheet_to_json(firstSheet);
+
+                        console.log('Vol data loaded:', volData.length, 'rows');
+                        console.log('Columns:', Object.keys(volData[0]));
+                        console.log('First row:', volData[0]);
+
+                        document.getElementById('volUploadBox').classList.add('uploaded');
+                        document.getElementById('volUploadBox').querySelector('p').textContent =
+                            `✓ Loaded ${volData.length} rows`;
+
+                        checkReadyToCalculate();
+                    } catch (error) {
+                        console.error('Error processing vol file:', error);
+                        alert('Error processing vol file: ' + error.message);
+                        document.getElementById('volUploadBox').querySelector('p').textContent =
+                            'Error loading file. See console for details.';
+                    }
                 };
                 reader.readAsArrayBuffer(file);
             }
