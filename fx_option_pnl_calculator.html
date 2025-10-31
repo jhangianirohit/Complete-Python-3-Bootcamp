@@ -165,7 +165,8 @@
         <h1>FX Option P&L Calculator - 10-Minute Intervals</h1>
 
         <div class="info-box">
-            <strong>Configuration:</strong> EURUSD Options (5 strikes), Notional: 100M USD per strike
+            <strong>Configuration:</strong> EURUSD Options (5 strikes), Notional: 100M Settlement Currency (USD) per strike
+            <br><strong>Note:</strong> Base currency (EUR) notional varies by strike: Base Notional = 100M / Strike
             <br><strong>Time Period:</strong> 24 hours (1440 minutes) with 10-minute intervals = 145 data points
             <br><strong>Model:</strong> Black-Scholes with r=0, q=0
             <br><strong>Strikes:</strong> 10Δ Put, 25Δ Put, ATM Call, 25Δ Call, 10Δ Call
@@ -201,7 +202,7 @@
 
     <script>
         // Constants
-        const NOTIONAL = 100_000_000; // 100 million USD
+        const SETTLEMENT_NOTIONAL = 100_000_000; // 100 million USD (settlement currency)
         const MINUTES_IN_DAY = 1440;
         const NUM_POINTS = 145; // 0, 10, 20, ..., 1440
         const INTERVAL_MINUTES = 10;
@@ -402,7 +403,7 @@
             return spots;
         }
 
-        function calculateStrikePnL(spots, strike, sigma, optionType) {
+        function calculateStrikePnL(spots, strike, sigma, optionType, baseNotional) {
             let results = [];
             let cumulativeHedge = 0;
             let weightedSumHedge = 0;
@@ -415,7 +416,7 @@
             const premium = optionType === 'call'
                 ? blackScholesCall(spots[0], strike, T0, sigma)
                 : blackScholesPut(spots[0], strike, T0, sigma);
-            const premiumPaid = -premium * NOTIONAL;
+            const premiumPaid = -premium * baseNotional;
 
             for (let i = 0; i < NUM_POINTS; i++) {
                 const timeMinutes = i * INTERVAL_MINUTES;
@@ -438,10 +439,10 @@
                 // Calculate incremental hedge
                 let incrementalHedge;
                 if (i === 0) {
-                    incrementalHedge = -delta * NOTIONAL;
+                    incrementalHedge = -delta * baseNotional;
                 } else {
                     const deltaChange = delta - previousDelta;
-                    incrementalHedge = -deltaChange * NOTIONAL;
+                    incrementalHedge = -deltaChange * baseNotional;
                 }
 
                 // Update cumulative hedge with realized/unrealized P&L tracking
@@ -477,7 +478,7 @@
 
                 const unrealizedPnL = cumulativeHedge !== 0 ? cumulativeHedge * (spot - avgSpot) : 0;
                 const hedgePnL = realizedPnL + unrealizedPnL;
-                const portfolioValue = premiumPaid + (optionValue * NOTIONAL) + hedgePnL;
+                const portfolioValue = premiumPaid + (optionValue * baseNotional) + hedgePnL;
 
                 results.push({
                     time: timeMinutes,
@@ -522,13 +523,17 @@
                 { name: '10Δ Call', strike: calculateStrikeFromDelta(S0, sigma, T0, 0.10), type: 'call' }
             ];
 
-            // Calculate P&L for each strike
-            const allResults = strikes.map(s => ({
-                name: s.name,
-                strike: s.strike,
-                type: s.type,
-                results: calculateStrikePnL(spots, s.strike, sigma, s.type)
-            }));
+            // Calculate P&L for each strike with base notional = 100M / strike
+            const allResults = strikes.map(s => {
+                const baseNotional = SETTLEMENT_NOTIONAL / s.strike;
+                return {
+                    name: s.name,
+                    strike: s.strike,
+                    type: s.type,
+                    baseNotional: baseNotional,
+                    results: calculateStrikePnL(spots, s.strike, sigma, s.type, baseNotional)
+                };
+            });
 
             displayResults(allResults, strikes);
         }
@@ -545,18 +550,18 @@
             document.getElementById('strikes-info').innerHTML = strikesHTML;
 
             // Create summary table
-            let summaryHTML = '<h2>Summary - Final P&L Across All Strikes</h2>';
+            let summaryHTML = '<h2>Summary - Final P&L Across All Strikes (100M Settlement Currency)</h2>';
             summaryHTML += '<table class="summary-table"><thead><tr>';
-            summaryHTML += '<th>Strike Type</th><th>Strike Price</th><th>Final Portfolio P&L</th></tr></thead><tbody>';
+            summaryHTML += '<th>Strike Type</th><th>Strike Price</th><th>Base Notional</th><th>Final Portfolio P&L</th></tr></thead><tbody>';
 
             let totalPnL = 0;
             allResults.forEach(r => {
                 const finalPnL = r.results[r.results.length - 1].portfolioValue;
                 totalPnL += finalPnL;
-                summaryHTML += `<tr><td>${r.name}</td><td>${formatNumber(r.strike)}</td><td>${formatThousand(finalPnL)}</td></tr>`;
+                summaryHTML += `<tr><td>${r.name}</td><td>${formatNumber(r.strike)}</td><td>${formatMillion(r.baseNotional)} EUR</td><td>${formatThousand(finalPnL)}</td></tr>`;
             });
 
-            summaryHTML += `<tr><td colspan="2"><strong>TOTAL</strong></td><td><strong>${formatThousand(totalPnL)}</strong></td></tr>`;
+            summaryHTML += `<tr><td colspan="3"><strong>TOTAL</strong></td><td><strong>${formatThousand(totalPnL)}</strong></td></tr>`;
             summaryHTML += '</tbody></table>';
 
             document.getElementById('summary').innerHTML = summaryHTML;
