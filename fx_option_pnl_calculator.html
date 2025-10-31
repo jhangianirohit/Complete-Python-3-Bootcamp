@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FX Option P&L Calculator - Multi-Strike</title>
+    <title>FX Option P&L Calculator - 10-Minute Intervals</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -39,6 +39,9 @@
             display: flex;
             flex-direction: column;
         }
+        .input-group-full {
+            grid-column: 1 / -1;
+        }
         label {
             font-weight: bold;
             margin-bottom: 5px;
@@ -50,6 +53,14 @@
             border-radius: 4px;
             font-size: 14px;
         }
+        textarea {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+        }
         button {
             background-color: #007bff;
             color: white;
@@ -58,26 +69,36 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 16px;
-            margin-top: 20px;
+            margin-top: 10px;
+            margin-right: 10px;
         }
         button:hover {
             background-color: #0056b3;
+        }
+        button.secondary {
+            background-color: #6c757d;
+        }
+        button.secondary:hover {
+            background-color: #545b62;
         }
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
-            font-size: 12px;
+            font-size: 11px;
         }
         th, td {
             border: 1px solid #ddd;
-            padding: 8px 6px;
+            padding: 6px 4px;
             text-align: right;
         }
         th {
             background-color: #007bff;
             color: white;
             font-weight: bold;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
         tr:nth-child(even) {
             background-color: #f9f9f9;
@@ -88,6 +109,12 @@
         .summary-table tbody tr:last-child {
             background-color: #d4edda;
             font-weight: bold;
+        }
+        .strike-table-wrapper {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
         .strike-table tbody tr:first-child {
             background-color: #fff3cd;
@@ -107,6 +134,10 @@
         .warning {
             background-color: #fff3cd;
             border-left-color: #ffc107;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
         }
         .info-box {
             background-color: #e7f3ff;
@@ -131,18 +162,19 @@
 </head>
 <body>
     <div class="container">
-        <h1>FX Option P&L Calculator - Multi-Strike Delta Hedging</h1>
+        <h1>FX Option P&L Calculator - 10-Minute Intervals</h1>
 
         <div class="info-box">
-            <strong>Configuration:</strong> EURUSD Options (5 strikes), Notional: 100M USD per strike, Hedge Frequency: Every 6 hours
+            <strong>Configuration:</strong> EURUSD Options (5 strikes), Notional: 100M USD per strike
+            <br><strong>Time Period:</strong> 24 hours (1440 minutes) with 10-minute intervals = 145 data points
             <br><strong>Model:</strong> Black-Scholes with r=0, q=0
             <br><strong>Strikes:</strong> 10Δ Put, 25Δ Put, ATM Call, 25Δ Call, 10Δ Call
         </div>
 
         <div class="input-section">
             <div class="input-group">
-                <label>Initial Spot (t=0h):</label>
-                <input type="number" id="spot0" step="0.0001" value="1.1000">
+                <label>Initial Spot (for test data generation):</label>
+                <input type="number" id="initialSpot" step="0.0001" value="1.1000">
             </div>
             <div class="input-group">
                 <label>Implied Volatility (%):</label>
@@ -151,26 +183,17 @@
         </div>
 
         <div class="input-section">
-            <div class="input-group">
-                <label>Spot at t=6h:</label>
-                <input type="number" id="spot6" step="0.0001" value="1.1050">
-            </div>
-            <div class="input-group">
-                <label>Spot at t=12h:</label>
-                <input type="number" id="spot12" step="0.0001" value="1.1100">
-            </div>
-            <div class="input-group">
-                <label>Spot at t=18h:</label>
-                <input type="number" id="spot18" step="0.0001" value="1.1150">
-            </div>
-            <div class="input-group">
-                <label>Spot at t=24h:</label>
-                <input type="number" id="spot24" step="0.0001" value="1.1200">
+            <div class="input-group input-group-full">
+                <label>Spot Price Series (145 values, one per line, starting at t=0 minutes):</label>
+                <textarea id="spotSeries" rows="10" placeholder="Paste 145 spot prices here, one per line..."></textarea>
+                <div style="margin-top: 5px;">
+                    <button class="secondary" onclick="generateTestData()">Generate Test Data</button>
+                    <button onclick="calculate()">Calculate All Strikes</button>
+                </div>
             </div>
         </div>
 
-        <button onclick="calculate()">Calculate All Strikes</button>
-
+        <div id="validation-message"></div>
         <div id="strikes-info"></div>
         <div id="summary"></div>
         <div id="results"></div>
@@ -179,13 +202,12 @@
     <script>
         // Constants
         const NOTIONAL = 100_000_000; // 100 million USD
-        const HOURS_PER_YEAR = 365 * 24;
+        const MINUTES_IN_DAY = 1440;
+        const NUM_POINTS = 145; // 0, 10, 20, ..., 1440
+        const INTERVAL_MINUTES = 10;
 
         // ============ STRIKE CALCULATION - EXACT CODE ============
 
-        /**
-         * Error function approximation
-         */
         function erf(x) {
             const sign = x >= 0 ? 1 : -1;
             x = Math.abs(x);
@@ -200,16 +222,10 @@
             return sign * y;
         }
 
-        /**
-         * Standard normal cumulative distribution function
-         */
         function normalCDF(x) {
             return 0.5 * (1 + erf(x / Math.sqrt(2)));
         }
 
-        /**
-         * Inverse normal CDF (approximation)
-         */
         function inverseNormalCDF(p) {
             if (p <= 0 || p >= 1) throw new Error('p must be between 0 and 1');
 
@@ -256,40 +272,22 @@
             return result;
         }
 
-        /**
-         * Calculate strike from target delta
-         * @param {number} spot - e.g., 1.1000
-         * @param {number} annualVol - e.g., 0.10 for 10%
-         * @param {number} timeYears - e.g., 1/365 for 1 day
-         * @param {number} targetDelta - -0.25, -0.10 for puts; +0.25, +0.10 for calls
-         */
         function calculateStrikeFromDelta(spot, annualVol, timeYears, targetDelta) {
             const volSqrtT = annualVol * Math.sqrt(timeYears);
             const varianceAdj = 0.5 * annualVol * annualVol * timeYears;
-
-            // Convert delta to d1Input for inverse normal
             const d1Input = (targetDelta < 0) ? (targetDelta + 1.0) : targetDelta;
-
-            // Calculate d1
             const d1 = inverseNormalCDF(d1Input);
-
-            // Calculate strike
             const logMoneyness = d1 * volSqrtT - varianceAdj;
             const strike = spot * Math.exp(-logMoneyness);
-
             return strike;
         }
 
         // ============ END STRIKE CALCULATION CODE ============
 
-        // Keep normCDF as alias for backward compatibility with BS formulas
         function normCDF(x) {
             return normalCDF(x);
         }
 
-        /**
-         * Black-Scholes Call Option Price
-         */
         function blackScholesCall(S, K, T, sigma) {
             if (T <= 0) {
                 return Math.max(S - K, 0);
@@ -302,9 +300,6 @@
             return S * normCDF(d1) - K * normCDF(d2);
         }
 
-        /**
-         * Black-Scholes Put Option Price
-         */
         function blackScholesPut(S, K, T, sigma) {
             if (T <= 0) {
                 return Math.max(K - S, 0);
@@ -317,9 +312,6 @@
             return K * normCDF(-d2) - S * normCDF(-d1);
         }
 
-        /**
-         * Delta of a Call Option
-         */
         function callDelta(S, K, T, sigma) {
             if (T <= 0) {
                 return S > K ? 1 : 0;
@@ -331,16 +323,10 @@
             return normCDF(d1);
         }
 
-        /**
-         * Delta of a Put Option
-         */
         function putDelta(S, K, T, sigma) {
             return callDelta(S, K, T, sigma) - 1;
         }
 
-        /**
-         * Format number as currency (thousands with comma separators)
-         */
         function formatThousand(value) {
             const thousands = value / 1_000;
             const absThousands = Math.abs(thousands);
@@ -349,9 +335,6 @@
             return sign + formatted + 'k';
         }
 
-        /**
-         * Format number as millions with one decimal
-         */
         function formatMillion(value) {
             const millions = value / 1_000_000;
             const absMillion = Math.abs(millions);
@@ -360,17 +343,66 @@
             return sign + formatted + 'm';
         }
 
-        /**
-         * Format number with specified decimals
-         */
         function formatNumber(value, decimals = 4) {
             return value.toFixed(decimals);
         }
 
-        /**
-         * Calculate P&L for a single strike
-         */
-        function calculateStrikePnL(spots, strike, timeInYears, sigma, optionType) {
+        function generateTestData() {
+            const initialSpot = parseFloat(document.getElementById('initialSpot').value);
+            if (isNaN(initialSpot) || initialSpot <= 0) {
+                showValidationMessage('Please enter a valid initial spot price', 'error');
+                return;
+            }
+
+            const spots = [initialSpot];
+            let currentSpot = initialSpot;
+
+            // Generate 144 more values with random walk
+            for (let i = 1; i < NUM_POINTS; i++) {
+                // Random move: ±0.01% to ±0.05% per 10 minutes
+                const randomMove = (Math.random() - 0.5) * 0.0008 * currentSpot;
+                currentSpot = currentSpot + randomMove;
+                spots.push(currentSpot);
+            }
+
+            // Fill textarea
+            document.getElementById('spotSeries').value = spots.map(s => s.toFixed(4)).join('\n');
+            showValidationMessage('Test data generated successfully (145 values)', 'verification');
+        }
+
+        function showValidationMessage(message, type = 'verification') {
+            const div = document.getElementById('validation-message');
+            div.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+        function parseSpotSeries() {
+            const text = document.getElementById('spotSeries').value.trim();
+            if (!text) {
+                showValidationMessage('Please enter spot price series', 'error');
+                return null;
+            }
+
+            const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+            if (lines.length !== NUM_POINTS) {
+                showValidationMessage(`Error: Expected ${NUM_POINTS} values, got ${lines.length}`, 'error');
+                return null;
+            }
+
+            const spots = [];
+            for (let i = 0; i < lines.length; i++) {
+                const value = parseFloat(lines[i]);
+                if (isNaN(value) || value <= 0) {
+                    showValidationMessage(`Error: Invalid value at line ${i + 1}: "${lines[i]}"`, 'error');
+                    return null;
+                }
+                spots.push(value);
+            }
+
+            return spots;
+        }
+
+        function calculateStrikePnL(spots, strike, sigma, optionType) {
             let results = [];
             let cumulativeHedge = 0;
             let weightedSumHedge = 0;
@@ -378,18 +410,21 @@
             let realizedPnL = 0;
             let previousDelta = 0;
 
-            const times = [0, 6, 12, 18, 24];
-
             // Calculate premium at t=0
+            const T0 = 1 / 365; // 1 day in years
             const premium = optionType === 'call'
-                ? blackScholesCall(spots[0], strike, timeInYears[0], sigma)
-                : blackScholesPut(spots[0], strike, timeInYears[0], sigma);
+                ? blackScholesCall(spots[0], strike, T0, sigma)
+                : blackScholesPut(spots[0], strike, T0, sigma);
             const premiumPaid = -premium * NOTIONAL;
 
-            for (let i = 0; i < times.length; i++) {
-                const t = times[i];
+            for (let i = 0; i < NUM_POINTS; i++) {
+                const timeMinutes = i * INTERVAL_MINUTES;
                 const spot = spots[i];
-                const T = timeInYears[i];
+
+                // Time remaining in years
+                const minutesRemaining = MINUTES_IN_DAY - timeMinutes;
+                const daysRemaining = minutesRemaining / MINUTES_IN_DAY;
+                const T = daysRemaining / 365;
 
                 // Calculate option value and delta
                 const optionValue = optionType === 'call'
@@ -445,7 +480,7 @@
                 const portfolioValue = premiumPaid + (optionValue * NOTIONAL) + hedgePnL;
 
                 results.push({
-                    time: t,
+                    time: timeMinutes,
                     spot: spot,
                     delta: delta,
                     incrementalHedge: incrementalHedge,
@@ -465,27 +500,19 @@
             return results;
         }
 
-        /**
-         * Main calculation function
-         */
         function calculate() {
-            // Get inputs
-            const spots = [
-                parseFloat(document.getElementById('spot0').value),
-                parseFloat(document.getElementById('spot6').value),
-                parseFloat(document.getElementById('spot12').value),
-                parseFloat(document.getElementById('spot18').value),
-                parseFloat(document.getElementById('spot24').value)
-            ];
+            // Parse and validate spot series
+            const spots = parseSpotSeries();
+            if (!spots) return;
+
+            showValidationMessage(`✓ Validated ${NUM_POINTS} spot prices`, 'verification');
+
             const volPercent = parseFloat(document.getElementById('vol').value);
             const sigma = volPercent / 100;
 
-            const times = [0, 6, 12, 18, 24];
-            const timeInYears = times.map(h => (24 - h) / HOURS_PER_YEAR);
-
-            // Calculate strikes for each delta target
+            // Calculate strikes
             const S0 = spots[0];
-            const T0 = timeInYears[0];
+            const T0 = 1 / 365; // 1 day
 
             const strikes = [
                 { name: '10Δ Put', strike: calculateStrikeFromDelta(S0, sigma, T0, -0.10), type: 'put' },
@@ -500,25 +527,21 @@
                 name: s.name,
                 strike: s.strike,
                 type: s.type,
-                results: calculateStrikePnL(spots, s.strike, timeInYears, sigma, s.type)
+                results: calculateStrikePnL(spots, s.strike, sigma, s.type)
             }));
 
-            // Display results
             displayResults(allResults, strikes);
         }
 
-        /**
-         * Display results
-         */
         function displayResults(allResults, strikes) {
-            // Display calculated strikes with actual deltas
+            // Display calculated strikes
             let strikesHTML = '<div class="verification"><strong>Calculated Strikes (with t=0 Delta):</strong><br>';
             allResults.forEach((r, idx) => {
                 const initialDelta = r.results[0].delta;
                 strikesHTML += `${r.name}: Strike = ${formatNumber(r.strike)}, Δ = ${formatNumber(initialDelta, 3)}`;
                 if (idx < allResults.length - 1) strikesHTML += ' | ';
             });
-            strikesHTML += '<br><strong>Verification:</strong> Strikes should be ordered: 10Δ Put &lt; 25Δ Put &lt; ATM &lt; 25Δ Call &lt; 10Δ Call</div>';
+            strikesHTML += '<br><strong>Verification:</strong> Strikes ordered: 10Δ Put &lt; 25Δ Put &lt; ATM &lt; 25Δ Call &lt; 10Δ Call</div>';
             document.getElementById('strikes-info').innerHTML = strikesHTML;
 
             // Create summary table
@@ -543,7 +566,7 @@
 
             allResults.forEach(strikeData => {
                 resultsHTML += `<div class="strike-section">`;
-                resultsHTML += `<div class="strike-header">Strike: ${formatNumber(strikeData.strike)} (${strikeData.name})</div>`;
+                resultsHTML += `<div class="strike-header">Strike: ${formatNumber(strikeData.strike)} (${strikeData.name}) - All ${NUM_POINTS} Time Points</div>`;
 
                 // Verification at t=0
                 const t0Portfolio = strikeData.results[0].portfolioValue;
@@ -553,11 +576,12 @@
                 resultsHTML += isValid ? '✓' : '✗ ERROR';
                 resultsHTML += '</div>';
 
-                // Table
+                // Table wrapper for scrolling
+                resultsHTML += '<div class="strike-table-wrapper">';
                 resultsHTML += '<table class="strike-table"><thead><tr>';
-                resultsHTML += '<th>Time (h)</th><th>Spot</th><th>Delta</th>';
-                resultsHTML += '<th>Incr Hedge</th><th>Cum Hedge</th><th>Avg Spot</th>';
-                resultsHTML += '<th>Hedge P&L</th><th>Option Value</th><th>Premium</th><th>Portfolio Value</th>';
+                resultsHTML += '<th>Time (min)</th><th>Spot</th><th>Delta</th>';
+                resultsHTML += '<th>Incr Hedge (m)</th><th>Cum Hedge (m)</th><th>Avg Spot</th>';
+                resultsHTML += '<th>Hedge P&L (k)</th><th>Option Value (k)</th><th>Premium (k)</th><th>Portfolio Value (k)</th>';
                 resultsHTML += '</tr></thead><tbody>';
 
                 strikeData.results.forEach(r => {
@@ -575,14 +599,13 @@
                     resultsHTML += '</tr>';
                 });
 
-                resultsHTML += '</tbody></table></div>';
+                resultsHTML += '</tbody></table></div></div>';
             });
 
             document.getElementById('results').innerHTML = resultsHTML;
         }
 
-        // Calculate on page load
-        window.onload = calculate;
+        // No auto-calculate on load - wait for user input
     </script>
 </body>
 </html>
