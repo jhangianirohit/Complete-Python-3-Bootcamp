@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Option P&L Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .input-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: right;
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:first-child {
+            background-color: #fff3cd;
+        }
+        tr:last-child {
+            background-color: #d4edda;
+            font-weight: bold;
+        }
+        .verification {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+            border-radius: 4px;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border-left-color: #ffc107;
+        }
+        .info-box {
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        .formula {
+            font-family: 'Courier New', monospace;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FX Option P&L Calculator - Delta Hedging</h1>
+
+        <div class="info-box">
+            <strong>Configuration:</strong> EURUSD ATM Call, Notional: 100M USD, Hedge Frequency: Every 6 hours
+            <br><strong>Model:</strong> Black-Scholes with r=0, q=0
+        </div>
+
+        <div class="input-section">
+            <div class="input-group">
+                <label>Initial Spot (t=0h):</label>
+                <input type="number" id="spot0" step="0.0001" value="1.1000">
+            </div>
+            <div class="input-group">
+                <label>Strike Price:</label>
+                <input type="number" id="strike" step="0.0001" value="1.1000">
+            </div>
+            <div class="input-group">
+                <label>Implied Volatility (%):</label>
+                <input type="number" id="vol" step="0.1" value="10">
+            </div>
+        </div>
+
+        <div class="input-section">
+            <div class="input-group">
+                <label>Spot at t=6h:</label>
+                <input type="number" id="spot6" step="0.0001" value="1.1050">
+            </div>
+            <div class="input-group">
+                <label>Spot at t=12h:</label>
+                <input type="number" id="spot12" step="0.0001" value="1.1100">
+            </div>
+            <div class="input-group">
+                <label>Spot at t=18h:</label>
+                <input type="number" id="spot18" step="0.0001" value="1.1150">
+            </div>
+            <div class="input-group">
+                <label>Spot at t=24h:</label>
+                <input type="number" id="spot24" step="0.0001" value="1.1200">
+            </div>
+        </div>
+
+        <button onclick="calculate()">Calculate P&L</button>
+
+        <div id="verification"></div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // Constants
+        const NOTIONAL = 100_000_000; // 100 million USD
+        const HOURS_PER_YEAR = 365 * 24;
+
+        /**
+         * Standard normal cumulative distribution function
+         * Uses approximation for Φ(x)
+         */
+        function normCDF(x) {
+            const t = 1 / (1 + 0.2316419 * Math.abs(x));
+            const d = 0.3989423 * Math.exp(-x * x / 2);
+            const prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+            return x > 0 ? 1 - prob : prob;
+        }
+
+        /**
+         * Black-Scholes Call Option Price
+         * Formula: C = S*N(d1) - K*N(d2)
+         * With r=0, q=0:
+         *   d1 = [ln(S/K) + (σ²/2)*T] / (σ*√T)
+         *   d2 = d1 - σ*√T
+         */
+        function blackScholesCall(S, K, T, sigma) {
+            if (T <= 0) {
+                // At expiry, return intrinsic value
+                return Math.max(S - K, 0);
+            }
+
+            const sqrtT = Math.sqrt(T);
+            const d1 = (Math.log(S / K) + (0.5 * sigma * sigma * T)) / (sigma * sqrtT);
+            const d2 = d1 - sigma * sqrtT;
+
+            const callPrice = S * normCDF(d1) - K * normCDF(d2);
+            return callPrice;
+        }
+
+        /**
+         * Delta of a Call Option
+         * Formula: Δ = N(d1)
+         * This represents the sensitivity of option price to spot price
+         */
+        function callDelta(S, K, T, sigma) {
+            if (T <= 0) {
+                // At expiry, delta is 1 if ITM, 0 if OTM
+                return S > K ? 1 : 0;
+            }
+
+            const sqrtT = Math.sqrt(T);
+            const d1 = (Math.log(S / K) + (0.5 * sigma * sigma * T)) / (sigma * sqrtT);
+
+            return normCDF(d1);
+        }
+
+        /**
+         * Format number as currency (millions)
+         */
+        function formatMillion(value) {
+            return (value / 1_000_000).toFixed(3) + 'M';
+        }
+
+        /**
+         * Format number with specified decimals
+         */
+        function formatNumber(value, decimals = 4) {
+            return value.toFixed(decimals);
+        }
+
+        /**
+         * Main calculation function
+         */
+        function calculate() {
+            // Get inputs
+            const spots = [
+                parseFloat(document.getElementById('spot0').value),
+                parseFloat(document.getElementById('spot6').value),
+                parseFloat(document.getElementById('spot12').value),
+                parseFloat(document.getElementById('spot18').value),
+                parseFloat(document.getElementById('spot24').value)
+            ];
+            const strike = parseFloat(document.getElementById('strike').value);
+            const volPercent = parseFloat(document.getElementById('vol').value);
+            const sigma = volPercent / 100; // Convert to decimal
+
+            // Time points in years (0h, 6h, 12h, 18h, 24h)
+            const times = [0, 6, 12, 18, 24];
+            const timeInYears = times.map(h => (24 - h) / HOURS_PER_YEAR); // Time to expiry
+
+            // Arrays to store calculations
+            let results = [];
+            let cumulativeHedge = 0;
+            let weightedSumHedge = 0; // Σ(Incremental_Hedge × Spot)
+            let previousDelta = 0;
+
+            // Calculate premium at t=0
+            const premium = blackScholesCall(spots[0], strike, timeInYears[0], sigma);
+            const premiumPaid = -premium * NOTIONAL; // Negative because we pay premium
+
+            for (let i = 0; i < times.length; i++) {
+                const t = times[i];
+                const spot = spots[i];
+                const T = timeInYears[i];
+
+                // Calculate option value and delta at this time
+                const optionValue = blackScholesCall(spot, strike, T, sigma);
+                const delta = callDelta(spot, strike, T, sigma);
+
+                // Calculate incremental hedge
+                // At t=0, we sell delta × notional (because we're hedging a LONG call)
+                // At subsequent times, we adjust: Δₜ - Δₜ₋₁
+                let incrementalHedge;
+                if (i === 0) {
+                    incrementalHedge = -delta * NOTIONAL; // Initial hedge: SELL delta
+                } else {
+                    // Incremental change in hedge position
+                    const deltaChange = delta - previousDelta;
+                    incrementalHedge = -deltaChange * NOTIONAL; // Negative because we're SHORT
+                }
+
+                // Update cumulative hedge and weighted average
+                cumulativeHedge += incrementalHedge;
+                weightedSumHedge += incrementalHedge * spot;
+
+                // Calculate weighted average spot
+                // This is the average price at which we've executed our hedge
+                const avgSpot = cumulativeHedge !== 0 ? weightedSumHedge / cumulativeHedge : 0;
+
+                // Calculate hedge P&L
+                // Hedge P&L = -Cumulative_Hedge × (Current_Spot - Avg_Spot)
+                // Negative sign because we're SHORT the hedge
+                const hedgePnL = cumulativeHedge !== 0 ? -cumulativeHedge * (spot - avgSpot) : 0;
+
+                // Calculate portfolio value
+                // Portfolio = Premium_Paid + Option_Value + Hedge_P&L
+                const portfolioValue = premiumPaid + (optionValue * NOTIONAL) + hedgePnL;
+
+                results.push({
+                    time: t,
+                    spot: spot,
+                    delta: delta,
+                    incrementalHedge: incrementalHedge,
+                    cumulativeHedge: cumulativeHedge,
+                    avgSpot: avgSpot,
+                    hedgePnL: hedgePnL,
+                    optionValue: optionValue * NOTIONAL,
+                    premium: premiumPaid,
+                    portfolioValue: portfolioValue
+                });
+
+                previousDelta = delta;
+            }
+
+            // Display results
+            displayResults(results, premium);
+        }
+
+        /**
+         * Display results in table format
+         */
+        function displayResults(results, premium) {
+            // Check t=0 verification
+            const t0Portfolio = results[0].portfolioValue;
+            const isValid = Math.abs(t0Portfolio) < 1; // Should be ~0 (within $1)
+
+            let verificationHTML = `
+                <div class="verification ${isValid ? '' : 'warning'}">
+                    <strong>Critical Verification at t=0:</strong><br>
+                    Premium Paid: ${formatMillion(results[0].premium)}<br>
+                    Option Value: ${formatMillion(results[0].optionValue)}<br>
+                    Hedge P&L: ${formatMillion(results[0].hedgePnL)}<br>
+                    <strong>Portfolio Value: ${formatMillion(t0Portfolio)}</strong>
+                    ${isValid ? '✓ VERIFIED (equals zero)' : '✗ ERROR (should be zero!)'}
+                </div>
+            `;
+
+            let tableHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time (h)</th>
+                            <th>Spot</th>
+                            <th>Delta</th>
+                            <th>Incr Hedge</th>
+                            <th>Cum Hedge</th>
+                            <th>Avg Spot</th>
+                            <th>Hedge P&L</th>
+                            <th>Option Value</th>
+                            <th>Premium</th>
+                            <th>Portfolio Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            results.forEach((r, idx) => {
+                tableHTML += `
+                    <tr>
+                        <td>${r.time}</td>
+                        <td>${formatNumber(r.spot)}</td>
+                        <td>${formatNumber(r.delta)}</td>
+                        <td>${formatMillion(r.incrementalHedge)}</td>
+                        <td>${formatMillion(r.cumulativeHedge)}</td>
+                        <td>${r.avgSpot !== 0 ? formatNumber(r.avgSpot) : '-'}</td>
+                        <td>${formatMillion(r.hedgePnL)}</td>
+                        <td>${formatMillion(r.optionValue)}</td>
+                        <td>${formatMillion(r.premium)}</td>
+                        <td>${formatMillion(r.portfolioValue)}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+
+            // Add formulas explanation
+            const formulasHTML = `
+                <div class="info-box" style="margin-top: 20px;">
+                    <strong>Calculation Formulas:</strong>
+                    <div class="formula">
+                        <strong>Black-Scholes Call:</strong> C = S×N(d₁) - K×N(d₂)<br>
+                        where d₁ = [ln(S/K) + (σ²/2)×T] / (σ×√T), d₂ = d₁ - σ×√T
+                    </div>
+                    <div class="formula">
+                        <strong>Delta:</strong> Δ = N(d₁)
+                    </div>
+                    <div class="formula">
+                        <strong>Incremental Hedge:</strong> -(Δₜ - Δₜ₋₁) × Notional<br>
+                        (Negative because we're SHORT the hedge to offset LONG call)
+                    </div>
+                    <div class="formula">
+                        <strong>Weighted Avg Spot:</strong> Σ(Incremental_Hedge × Spot) / Cumulative_Hedge
+                    </div>
+                    <div class="formula">
+                        <strong>Hedge P&L:</strong> -Cumulative_Hedge × (Current_Spot - Avg_Spot)<br>
+                        (Represents mark-to-market P&L on all hedge positions)
+                    </div>
+                    <div class="formula">
+                        <strong>Portfolio Value:</strong> Premium_Paid + Option_Value + Hedge_P&L
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('verification').innerHTML = verificationHTML;
+            document.getElementById('results').innerHTML = tableHTML + formulasHTML;
+        }
+
+        // Calculate on page load with default values
+        window.onload = calculate;
+    </script>
+</body>
+</html>
