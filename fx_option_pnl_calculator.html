@@ -248,7 +248,14 @@
          * @param {number} T - Time to expiry in years
          * @param {number} sigma - Volatility
          * @param {number} targetDelta - Target delta value
+         *   For puts: negative (e.g., -0.25 for 25-delta put)
+         *   For calls: positive (e.g., 0.25 for 25-delta call, NOT 0.75)
          * @param {string} optionType - 'call' or 'put'
+         * @returns {number} Strike price that produces the target delta
+         *
+         * Delta conventions:
+         *   Lower absolute delta = further OTM = strike further from spot
+         *   10Δ Put (Δ=-0.10) < 25Δ Put (Δ=-0.25) < ATM < 25Δ Call (Δ=0.25) < 10Δ Call (Δ=0.10)
          */
         function solveStrikeForDelta(S, T, sigma, targetDelta, optionType) {
             // Search bounds: 50% to 150% of spot
@@ -439,8 +446,8 @@
                 { name: '10Δ Put', strike: solveStrikeForDelta(S0, T0, sigma, -0.10, 'put'), type: 'put' },
                 { name: '25Δ Put', strike: solveStrikeForDelta(S0, T0, sigma, -0.25, 'put'), type: 'put' },
                 { name: 'ATM Call', strike: S0, type: 'call' },
-                { name: '25Δ Call', strike: solveStrikeForDelta(S0, T0, sigma, 0.75, 'call'), type: 'call' },
-                { name: '10Δ Call', strike: solveStrikeForDelta(S0, T0, sigma, 0.90, 'call'), type: 'call' }
+                { name: '25Δ Call', strike: solveStrikeForDelta(S0, T0, sigma, 0.25, 'call'), type: 'call' },
+                { name: '10Δ Call', strike: solveStrikeForDelta(S0, T0, sigma, 0.10, 'call'), type: 'call' }
             ];
 
             // Calculate P&L for each strike
@@ -459,12 +466,14 @@
          * Display results
          */
         function displayResults(allResults, strikes) {
-            // Display calculated strikes
-            let strikesHTML = '<div class="verification"><strong>Calculated Strikes:</strong><br>';
-            strikes.forEach(s => {
-                strikesHTML += `${s.name}: ${formatNumber(s.strike)} | `;
+            // Display calculated strikes with actual deltas
+            let strikesHTML = '<div class="verification"><strong>Calculated Strikes (with t=0 Delta):</strong><br>';
+            allResults.forEach((r, idx) => {
+                const initialDelta = r.results[0].delta;
+                strikesHTML += `${r.name}: Strike = ${formatNumber(r.strike)}, Δ = ${formatNumber(initialDelta, 3)}`;
+                if (idx < allResults.length - 1) strikesHTML += ' | ';
             });
-            strikesHTML += '</div>';
+            strikesHTML += '<br><strong>Verification:</strong> Strikes should be ordered: 10Δ Put &lt; 25Δ Put &lt; ATM &lt; 25Δ Call &lt; 10Δ Call</div>';
             document.getElementById('strikes-info').innerHTML = strikesHTML;
 
             // Create summary table
