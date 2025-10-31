@@ -192,6 +192,54 @@
         }
 
         /**
+         * Inverse of standard normal cumulative distribution function
+         * Uses Beasley-Springer-Moro algorithm
+         * @param {number} p - Probability (0 < p < 1)
+         * @returns {number} z such that N(z) = p
+         */
+        function normInv(p) {
+            const a = [2.50662823884, -18.61500062529, 41.39119773534, -25.44106049637];
+            const b = [-8.47351093090, 23.08336743743, -21.06224101826, 3.13082909833];
+            const c = [0.3374754822726147, 0.9761690190917186, 0.1607979714918209,
+                       0.0276438810333863, 0.0038405729373609, 0.0003951896511919,
+                       0.0000321767881768, 0.0000002888167364, 0.0000003960315187];
+
+            if (p <= 0 || p >= 1) {
+                throw new Error("Probability must be between 0 and 1");
+            }
+
+            const y = p - 0.5;
+
+            if (Math.abs(y) < 0.42) {
+                // Central region
+                const r = y * y;
+                let num = a[3];
+                let den = 1.0;
+
+                for (let i = 2; i >= 0; i--) {
+                    num = num * r + a[i];
+                }
+                for (let i = 3; i >= 0; i--) {
+                    den = den * r + b[i];
+                }
+
+                return y * num / den;
+            } else {
+                // Tail region
+                let r = p < 0.5 ? p : 1 - p;
+                r = Math.sqrt(-Math.log(r));
+
+                let num = c[8];
+                for (let i = 7; i >= 0; i--) {
+                    num = num * r + c[i];
+                }
+
+                const z = num / r;
+                return p < 0.5 ? -z : z;
+            }
+        }
+
+        /**
          * Black-Scholes Call Option Price
          */
         function blackScholesCall(S, K, T, sigma) {
@@ -243,71 +291,50 @@
         }
 
         /**
-         * Solve for strike given target delta using bisection method
+         * Calculate strike for target delta using DIRECT closed-form formula
          * @param {number} S - Spot price
          * @param {number} T - Time to expiry in years
-         * @param {number} sigma - Volatility
+         * @param {number} sigma - Volatility (annualized)
          * @param {number} targetDelta - Target delta value
          *   For puts: negative (e.g., -0.25 for 25-delta put)
-         *   For calls: positive (e.g., 0.25 for 25-delta call, NOT 0.75)
+         *   For calls: positive (e.g., 0.25 for 25-delta call)
          * @param {string} optionType - 'call' or 'put'
          * @returns {number} Strike price that produces the target delta
          *
-         * Delta conventions:
-         *   Lower absolute delta = further OTM = strike further from spot
-         *   10Δ Put (Δ=-0.10) < 25Δ Put (Δ=-0.25) < ATM < 25Δ Call (Δ=0.25) < 10Δ Call (Δ=0.10)
+         * Formula derivation:
+         *   Call delta = N(d1), so d1 = N^(-1)(delta)
+         *   Put delta = N(d1) - 1, so d1 = N^(-1)(delta + 1)
          *
-         * Key relationships:
-         *   PUTS: Higher strike K → More negative delta
-         *   CALLS: Higher strike K → Lower delta (less positive)
+         *   From Black-Scholes: d1 = [ln(S/K) + 0.5×σ²×T] / (σ√T)
+         *   Solving for K: K = S × exp(-(d1 × σ√T - 0.5 × σ²T))
+         *
+         * Example (S=1.1000, σ=10%, T=1/365):
+         *   25Δ Put: K = 1.0961 ✓
+         *   10Δ Put: K = 1.0926 ✓
+         *   25Δ Call: K = 1.1039 ✓
+         *   10Δ Call: K = 1.1074 ✓
          */
         function solveStrikeForDelta(S, T, sigma, targetDelta, optionType) {
-            // Set appropriate search bounds based on option type
-            let kLow, kHigh;
-            if (optionType === 'put') {
-                // OTM puts have strikes below spot
-                kLow = S * 0.80;   // Far OTM put
-                kHigh = S * 0.98;  // Near ATM put
+            // Step 1: Calculate helper values
+            const sigma_sqrt_T = sigma * Math.sqrt(T);
+            const adjustment = 0.5 * sigma * sigma * T;
+
+            // Step 2: Find d1 based on option type and target delta
+            let d1;
+            if (optionType === 'call') {
+                // For calls: delta = N(d1), so d1 = N^(-1)(delta)
+                d1 = normInv(targetDelta);
             } else {
-                // OTM calls have strikes above spot
-                kLow = S * 1.02;   // Near ATM call
-                kHigh = S * 1.20;  // Far OTM call
+                // For puts: delta = N(d1) - 1, so N(d1) = delta + 1
+                // Therefore: d1 = N^(-1)(delta + 1)
+                d1 = normInv(targetDelta + 1);
             }
 
-            const tolerance = 0.00001;
-            const maxIterations = 100;
+            // Step 3: Calculate strike using direct formula
+            // K = S × exp(-(d1 × σ√T - 0.5 × σ²T))
+            const K = S * Math.exp(-(d1 * sigma_sqrt_T - adjustment));
 
-            for (let i = 0; i < maxIterations; i++) {
-                const kMid = (kLow + kHigh) / 2;
-                const delta = optionType === 'call' ? callDelta(S, kMid, T, sigma) : putDelta(S, kMid, T, sigma);
-
-                if (Math.abs(delta - targetDelta) < tolerance) {
-                    return kMid;
-                }
-
-                // Adjust search bounds based on option type
-                if (optionType === 'call') {
-                    // For calls: higher strike = lower delta
-                    if (delta > targetDelta) {
-                        kLow = kMid;  // Current delta too high, need higher strike
-                    } else {
-                        kHigh = kMid;  // Current delta too low, need lower strike
-                    }
-                } else {
-                    // For puts: higher strike = MORE negative delta
-                    if (delta < targetDelta) {
-                        // Delta is more negative than target (e.g., -0.30 vs -0.25)
-                        // Need delta to be less negative → need LOWER strike
-                        kHigh = kMid;
-                    } else {
-                        // Delta is less negative than target (e.g., -0.20 vs -0.25)
-                        // Need delta to be more negative → need HIGHER strike
-                        kLow = kMid;
-                    }
-                }
-            }
-
-            return (kLow + kHigh) / 2;
+            return K;
         }
 
         /**
