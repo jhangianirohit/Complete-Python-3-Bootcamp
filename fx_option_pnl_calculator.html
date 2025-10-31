@@ -599,8 +599,9 @@
                 if (idx < allResults.length - 1) strikesHTML += ' | ';
             });
             strikesHTML += '<br><strong>Verification:</strong> Strikes ordered: 10Δ Put &lt; 25Δ Put &lt; ATM &lt; 25Δ Call &lt; 10Δ Call</div>';
+            console.log("Strikes HTML length:", strikesHTML.length);
             strikesInfoDiv.innerHTML = strikesHTML;
-            console.log("Strikes HTML updated");
+            console.log("Strikes HTML set, div has", strikesInfoDiv.children.length, "children");
 
             // Create summary table
             console.log("Building summary table...");
@@ -618,8 +619,9 @@
             summaryHTML += `<tr><td colspan="3"><strong>TOTAL</strong></td><td><strong>${formatThousand(totalPnL)}</strong></td></tr>`;
             summaryHTML += '</tbody></table>';
 
+            console.log("Summary HTML length:", summaryHTML.length);
             summaryDiv.innerHTML = summaryHTML;
-            console.log("Summary table HTML set successfully");
+            console.log("Summary table HTML set, div has", summaryDiv.children.length, "children");
 
             // Create individual tables for each strike
             console.log("Building individual strike tables...");
@@ -665,8 +667,11 @@
             });
 
             console.log("Setting results HTML...");
+            console.log("Results HTML length:", resultsHTML.length, "characters");
+            console.log("First 200 chars of results HTML:", resultsHTML.substring(0, 200));
             resultsDiv.innerHTML = resultsHTML;
             console.log("Results HTML set successfully");
+            console.log("resultsDiv now has", resultsDiv.children.length, "child elements");
             console.log("=== DISPLAY RESULTS COMPLETE ===");
         }
 
