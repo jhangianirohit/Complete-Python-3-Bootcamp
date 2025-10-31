@@ -256,11 +256,23 @@
          * Delta conventions:
          *   Lower absolute delta = further OTM = strike further from spot
          *   10Δ Put (Δ=-0.10) < 25Δ Put (Δ=-0.25) < ATM < 25Δ Call (Δ=0.25) < 10Δ Call (Δ=0.10)
+         *
+         * Key relationships:
+         *   PUTS: Higher strike K → More negative delta
+         *   CALLS: Higher strike K → Lower delta (less positive)
          */
         function solveStrikeForDelta(S, T, sigma, targetDelta, optionType) {
-            // Search bounds: 50% to 150% of spot
-            let kLow = S * 0.5;
-            let kHigh = S * 1.5;
+            // Set appropriate search bounds based on option type
+            let kLow, kHigh;
+            if (optionType === 'put') {
+                // OTM puts have strikes below spot
+                kLow = S * 0.80;   // Far OTM put
+                kHigh = S * 0.98;  // Near ATM put
+            } else {
+                // OTM calls have strikes above spot
+                kLow = S * 1.02;   // Near ATM call
+                kHigh = S * 1.20;  // Far OTM call
+            }
 
             const tolerance = 0.00001;
             const maxIterations = 100;
@@ -273,19 +285,24 @@
                     return kMid;
                 }
 
-                // For calls: higher strike = lower delta
-                // For puts: higher strike = more negative delta (lower in absolute value)
+                // Adjust search bounds based on option type
                 if (optionType === 'call') {
+                    // For calls: higher strike = lower delta
                     if (delta > targetDelta) {
-                        kLow = kMid;  // Need higher strike to reduce delta
+                        kLow = kMid;  // Current delta too high, need higher strike
                     } else {
-                        kHigh = kMid;  // Need lower strike to increase delta
+                        kHigh = kMid;  // Current delta too low, need lower strike
                     }
                 } else {
-                    if (delta < targetDelta) {  // delta is more negative than target
-                        kLow = kMid;  // Need higher strike to make delta less negative
+                    // For puts: higher strike = MORE negative delta
+                    if (delta < targetDelta) {
+                        // Delta is more negative than target (e.g., -0.30 vs -0.25)
+                        // Need delta to be less negative → need LOWER strike
+                        kHigh = kMid;
                     } else {
-                        kHigh = kMid;  // Need lower strike to make delta more negative
+                        // Delta is less negative than target (e.g., -0.20 vs -0.25)
+                        // Need delta to be more negative → need HIGHER strike
+                        kLow = kMid;
                     }
                 }
             }
