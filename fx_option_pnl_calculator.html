@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Option P&L Calculator - EURUSD ATM Call</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #333;
+            font-size: 14px;
+        }
+
+        input {
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .section-title {
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        #results {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .summary-card.final {
+            background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%);
+            border-left: 4px solid #764ba2;
+        }
+
+        .summary-card h3 {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .summary-card .value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .summary-card .value.positive {
+            color: #10b981;
+        }
+
+        .summary-card .value.negative {
+            color: #ef4444;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: right;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        th:first-child {
+            text-align: center;
+        }
+
+        td {
+            padding: 12px;
+            text-align: right;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+
+        td:first-child {
+            text-align: center;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .info-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #1e40af;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FX Option P&L Calculator</h1>
+        <div class="subtitle">
+            EURUSD ATM Call | Notional: $100M | Delta Hedging: Every 6 Hours
+        </div>
+
+        <div class="info-box">
+            <strong>Setup:</strong> Black-Scholes model with r=0, q=0. Enter initial parameters and spot prices at each hedge point (6h intervals) to calculate hedged P&L.
+        </div>
+
+        <form id="calculatorForm">
+            <div class="form-section">
+                <div class="section-title">Initial Parameters</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="initialSpot">Initial Spot (t=0h)</label>
+                        <input type="number" id="initialSpot" step="0.0001" value="1.1000" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="strike">Strike Price</label>
+                        <input type="number" id="strike" step="0.0001" value="1.1000" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="volatility">Implied Volatility (%)</label>
+                        <input type="number" id="volatility" step="0.1" value="10" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <div class="section-title">Spot Prices at Hedge Points</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="spot6h">Spot at 6h</label>
+                        <input type="number" id="spot6h" step="0.0001" value="1.1050" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="spot12h">Spot at 12h</label>
+                        <input type="number" id="spot12h" step="0.0001" value="1.1100" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="spot18h">Spot at 18h</label>
+                        <input type="number" id="spot18h" step="0.0001" value="1.1080" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="spot24h">Spot at 24h (Expiry)</label>
+                        <input type="number" id="spot24h" step="0.0001" value="1.1120" required>
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit">Calculate P&L</button>
+        </form>
+
+        <div id="results">
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <h3>Premium Paid</h3>
+                    <div class="value" id="premiumValue">$0</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Total Hedge P&L</h3>
+                    <div class="value" id="hedgePnlValue">$0</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Intrinsic Value</h3>
+                    <div class="value" id="intrinsicValue">$0</div>
+                </div>
+                <div class="summary-card final">
+                    <h3>Final P&L</h3>
+                    <div class="value" id="finalPnlValue">$0</div>
+                </div>
+            </div>
+
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Spot</th>
+                        <th>Delta</th>
+                        <th>Hedge Qty Change</th>
+                        <th>Hedge P&L</th>
+                        <th>Cumulative P&L</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Constants
+        const NOTIONAL_USD = 100_000_000; // $100 million
+        const HOURS_IN_YEAR = 24 * 365; // For time calculations
+
+        /**
+         * Black-Scholes Formula Implementation
+         *
+         * For a European Call Option:
+         * C = S * N(d1) - K * e^(-r*T) * N(d2)
+         *
+         * Where:
+         * d1 = [ln(S/K) + (r + σ²/2) * T] / (σ * √T)
+         * d2 = d1 - σ * √T
+         *
+         * With r = 0 (zero interest rate):
+         * C = S * N(d1) - K * N(d2)
+         * d1 = [ln(S/K) + (σ²/2) * T] / (σ * √T)
+         *
+         * Delta (∂C/∂S) = N(d1)
+         *
+         * N(x) = Cumulative standard normal distribution
+         */
+
+        /**
+         * Cumulative standard normal distribution
+         * Approximation using error function
+         */
+        function normalCDF(x) {
+            const t = 1 / (1 + 0.2316419 * Math.abs(x));
+            const d = 0.3989423 * Math.exp(-x * x / 2);
+            const prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+            return x > 0 ? 1 - prob : prob;
+        }
+
+        /**
+         * Calculate d1 for Black-Scholes
+         * d1 = [ln(S/K) + (σ²/2) * T] / (σ * √T)
+         */
+        function calculateD1(spot, strike, volatility, timeToExpiry) {
+            if (timeToExpiry <= 0) return spot >= strike ? Infinity : -Infinity;
+
+            const sigma = volatility / 100; // Convert percentage to decimal
+            const d1 = (Math.log(spot / strike) + (sigma * sigma / 2) * timeToExpiry) /
+                       (sigma * Math.sqrt(timeToExpiry));
+            return d1;
+        }
+
+        /**
+         * Calculate d2 for Black-Scholes
+         * d2 = d1 - σ * √T
+         */
+        function calculateD2(d1, volatility, timeToExpiry) {
+            if (timeToExpiry <= 0) return d1;
+            const sigma = volatility / 100;
+            return d1 - sigma * Math.sqrt(timeToExpiry);
+        }
+
+        /**
+         * Calculate Black-Scholes call option price
+         * C = S * N(d1) - K * N(d2)  (with r=0)
+         */
+        function blackScholesCall(spot, strike, volatility, timeToExpiry) {
+            if (timeToExpiry <= 0) {
+                // At expiry, return intrinsic value
+                return Math.max(spot - strike, 0);
+            }
+
+            const d1 = calculateD1(spot, strike, volatility, timeToExpiry);
+            const d2 = calculateD2(d1, volatility, timeToExpiry);
+
+            const callPrice = spot * normalCDF(d1) - strike * normalCDF(d2);
+            return callPrice;
+        }
+
+        /**
+         * Calculate option delta
+         * Delta = N(d1)
+         */
+        function calculateDelta(spot, strike, volatility, timeToExpiry) {
+            if (timeToExpiry <= 0) {
+                // At expiry, delta is 1 if ITM, 0 if OTM
+                return spot >= strike ? 1 : 0;
+            }
+
+            const d1 = calculateD1(spot, strike, volatility, timeToExpiry);
+            return normalCDF(d1);
+        }
+
+        /**
+         * Format currency values
+         */
+        function formatCurrency(value) {
+            const sign = value >= 0 ? '' : '-';
+            const absValue = Math.abs(value);
+            if (absValue >= 1_000_000) {
+                return sign + '$' + (absValue / 1_000_000).toFixed(2) + 'M';
+            } else if (absValue >= 1_000) {
+                return sign + '$' + (absValue / 1_000).toFixed(2) + 'K';
+            } else {
+                return sign + '$' + absValue.toFixed(2);
+            }
+        }
+
+        /**
+         * Format number with commas
+         */
+        function formatNumber(value, decimals = 4) {
+            return value.toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        /**
+         * Main calculation function
+         */
+        function calculatePnL(inputs) {
+            const { initialSpot, strike, volatility, spots } = inputs;
+
+            // Time points in years (0h, 6h, 12h, 18h, 24h)
+            const times = [0, 6/HOURS_IN_YEAR, 12/HOURS_IN_YEAR, 18/HOURS_IN_YEAR, 24/HOURS_IN_YEAR];
+            const spotPrices = [initialSpot, ...spots];
+
+            const results = [];
+            let previousDelta = 0;
+            let previousSpot = initialSpot;
+            let cumulativePnL = 0;
+
+            // Calculate premium at t=0
+            const timeToExpiry = 24 / HOURS_IN_YEAR; // 1 day in years
+            const premium = blackScholesCall(initialSpot, strike, volatility, timeToExpiry) * NOTIONAL_USD;
+            cumulativePnL = -premium; // We pay the premium
+
+            // Process each hedge point
+            for (let i = 0; i < times.length; i++) {
+                const currentTime = times[i];
+                const currentSpot = spotPrices[i];
+                const remainingTime = (24 - currentTime * HOURS_IN_YEAR) / HOURS_IN_YEAR;
+
+                // Calculate delta at this point
+                const delta = calculateDelta(currentSpot, strike, volatility, remainingTime);
+
+                // Hedge quantity change (in units of base currency - EUR)
+                const hedgeQtyChange = (delta - previousDelta) * NOTIONAL_USD / currentSpot;
+
+                // Hedge P&L from previous period
+                // When spot moves, our existing hedge position generates P&L
+                let hedgePnL = 0;
+                if (i > 0) {
+                    const spotChange = currentSpot - previousSpot;
+                    // Previous hedge quantity generates P&L as spot moves
+                    hedgePnL = previousDelta * NOTIONAL_USD * spotChange / previousSpot;
+                    cumulativePnL += hedgePnL;
+                }
+
+                results.push({
+                    time: i * 6 + 'h',
+                    spot: currentSpot,
+                    delta: delta,
+                    hedgeQtyChange: hedgeQtyChange,
+                    hedgePnL: hedgePnL,
+                    cumulativePnL: cumulativePnL
+                });
+
+                previousDelta = delta;
+                previousSpot = currentSpot;
+            }
+
+            // At expiry, add intrinsic value
+            const finalSpot = spotPrices[spotPrices.length - 1];
+            const intrinsicValue = Math.max(finalSpot - strike, 0) * NOTIONAL_USD;
+            const totalHedgePnL = results.reduce((sum, r) => sum + r.hedgePnL, 0);
+            const finalPnL = -premium + totalHedgePnL + intrinsicValue;
+
+            return {
+                results,
+                premium,
+                totalHedgePnL,
+                intrinsicValue,
+                finalPnL
+            };
+        }
+
+        /**
+         * Display results
+         */
+        function displayResults(data) {
+            const { results, premium, totalHedgePnL, intrinsicValue, finalPnL } = data;
+
+            // Update summary cards
+            document.getElementById('premiumValue').textContent = formatCurrency(premium);
+            document.getElementById('premiumValue').className = 'value negative';
+
+            document.getElementById('hedgePnlValue').textContent = formatCurrency(totalHedgePnL);
+            document.getElementById('hedgePnlValue').className = totalHedgePnL >= 0 ? 'value positive' : 'value negative';
+
+            document.getElementById('intrinsicValue').textContent = formatCurrency(intrinsicValue);
+            document.getElementById('intrinsicValue').className = 'value positive';
+
+            document.getElementById('finalPnlValue').textContent = formatCurrency(finalPnL);
+            document.getElementById('finalPnlValue').className = finalPnL >= 0 ? 'value positive' : 'value negative';
+
+            // Update table
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+
+            results.forEach((row, index) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.time}</td>
+                    <td>${formatNumber(row.spot)}</td>
+                    <td>${formatNumber(row.delta)}</td>
+                    <td>${formatNumber(row.hedgeQtyChange, 2)}</td>
+                    <td>${formatCurrency(row.hedgePnL)}</td>
+                    <td>${formatCurrency(row.cumulativePnL)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // Add final row with intrinsic value
+            const finalRow = document.createElement('tr');
+            finalRow.innerHTML = `
+                <td>Expiry</td>
+                <td colspan="4" style="text-align: left; padding-left: 20px;">Intrinsic Value: ${formatCurrency(intrinsicValue)}</td>
+                <td><strong>${formatCurrency(finalPnL)}</strong></td>
+            `;
+            tbody.appendChild(finalRow);
+
+            // Show results section
+            document.getElementById('results').style.display = 'block';
+
+            // Smooth scroll to results
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        /**
+         * Form submission handler
+         */
+        document.getElementById('calculatorForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const inputs = {
+                initialSpot: parseFloat(document.getElementById('initialSpot').value),
+                strike: parseFloat(document.getElementById('strike').value),
+                volatility: parseFloat(document.getElementById('volatility').value),
+                spots: [
+                    parseFloat(document.getElementById('spot6h').value),
+                    parseFloat(document.getElementById('spot12h').value),
+                    parseFloat(document.getElementById('spot18h').value),
+                    parseFloat(document.getElementById('spot24h').value)
+                ]
+            };
+
+            const results = calculatePnL(inputs);
+            displayResults(results);
+        });
+    </script>
+</body>
+</html>
