@@ -7,7 +7,7 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 20px auto;
             padding: 20px;
             background-color: #f5f5f5;
@@ -61,11 +61,11 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
-            font-size: 13px;
+            font-size: 11px;
         }
         th, td {
             border: 1px solid #ddd;
-            padding: 10px;
+            padding: 8px 6px;
             text-align: right;
         }
         th {
@@ -214,10 +214,14 @@
         }
 
         /**
-         * Format number as currency (millions)
+         * Format number as currency (thousands with comma separators)
          */
-        function formatMillion(value) {
-            return (value / 1_000_000).toFixed(3) + 'M';
+        function formatThousand(value) {
+            const thousands = value / 1_000;
+            const absThousands = Math.abs(thousands);
+            const sign = thousands < 0 ? '-' : '';
+            const formatted = absThousands.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            return sign + formatted + 'k';
         }
 
         /**
@@ -251,6 +255,8 @@
             let results = [];
             let cumulativeHedge = 0;
             let weightedSumHedge = 0; // Σ(Incremental_Hedge × Spot)
+            let avgSpot = 0;
+            let realizedPnL = 0; // Accumulated realized P&L from closed positions
             let previousDelta = 0;
 
             // Calculate premium at t=0
@@ -278,18 +284,48 @@
                     incrementalHedge = -deltaChange * NOTIONAL; // Negative because we're SHORT
                 }
 
-                // Update cumulative hedge and weighted average
-                cumulativeHedge += incrementalHedge;
-                weightedSumHedge += incrementalHedge * spot;
+                // Update cumulative hedge with realized/unrealized P&L tracking
+                const prevCumHedge = cumulativeHedge;
+                const prevAvgSpot = avgSpot;
+                const newCumHedge = prevCumHedge + incrementalHedge;
 
-                // Calculate weighted average spot
-                // This is the average price at which we've executed our hedge
-                const avgSpot = cumulativeHedge !== 0 ? weightedSumHedge / cumulativeHedge : 0;
+                if (prevCumHedge === 0) {
+                    // Starting a new position from zero
+                    cumulativeHedge = newCumHedge;
+                    weightedSumHedge = newCumHedge * spot;
+                    avgSpot = spot;
+                } else if (newCumHedge === 0) {
+                    // Closing entire position - realize all P&L
+                    realizedPnL += prevCumHedge * (spot - prevAvgSpot);
+                    cumulativeHedge = 0;
+                    weightedSumHedge = 0;
+                    avgSpot = 0;
+                } else if (Math.sign(prevCumHedge) !== Math.sign(newCumHedge)) {
+                    // Crossing zero - close old position, open new one
+                    realizedPnL += prevCumHedge * (spot - prevAvgSpot);
+                    cumulativeHedge = newCumHedge;
+                    weightedSumHedge = newCumHedge * spot;
+                    avgSpot = spot;
+                } else if (Math.abs(newCumHedge) < Math.abs(prevCumHedge)) {
+                    // Reducing position (same direction) - realize P&L on closed portion
+                    const closedAmount = prevCumHedge - newCumHedge;
+                    realizedPnL += closedAmount * (spot - prevAvgSpot);
+                    cumulativeHedge = newCumHedge;
+                    // Keep same average price for remaining position
+                    weightedSumHedge = newCumHedge * prevAvgSpot;
+                    avgSpot = prevAvgSpot;
+                } else {
+                    // Increasing position (same direction) - update weighted average
+                    cumulativeHedge = newCumHedge;
+                    weightedSumHedge += incrementalHedge * spot;
+                    avgSpot = weightedSumHedge / cumulativeHedge;
+                }
 
-                // Calculate hedge P&L
-                // Hedge P&L = Cumulative_Hedge × (Current_Spot - Avg_Spot)
-                // Standard P&L formula: Position × (Current_Price - Entry_Price)
-                const hedgePnL = cumulativeHedge !== 0 ? cumulativeHedge * (spot - avgSpot) : 0;
+                // Calculate unrealized P&L on current position
+                const unrealizedPnL = cumulativeHedge !== 0 ? cumulativeHedge * (spot - avgSpot) : 0;
+
+                // Total hedge P&L = Realized + Unrealized
+                const hedgePnL = realizedPnL + unrealizedPnL;
 
                 // Calculate portfolio value
                 // Portfolio = Premium_Paid + Option_Value + Hedge_P&L
@@ -302,6 +338,8 @@
                     incrementalHedge: incrementalHedge,
                     cumulativeHedge: cumulativeHedge,
                     avgSpot: avgSpot,
+                    realizedPnL: realizedPnL,
+                    unrealizedPnL: unrealizedPnL,
                     hedgePnL: hedgePnL,
                     optionValue: optionValue * NOTIONAL,
                     premium: premiumPaid,
@@ -326,10 +364,10 @@
             let verificationHTML = `
                 <div class="verification ${isValid ? '' : 'warning'}">
                     <strong>Critical Verification at t=0:</strong><br>
-                    Premium Paid: ${formatMillion(results[0].premium)}<br>
-                    Option Value: ${formatMillion(results[0].optionValue)}<br>
-                    Hedge P&L: ${formatMillion(results[0].hedgePnL)}<br>
-                    <strong>Portfolio Value: ${formatMillion(t0Portfolio)}</strong>
+                    Premium Paid: ${formatThousand(results[0].premium)}<br>
+                    Option Value: ${formatThousand(results[0].optionValue)}<br>
+                    Hedge P&L: ${formatThousand(results[0].hedgePnL)}<br>
+                    <strong>Portfolio Value: ${formatThousand(t0Portfolio)}</strong>
                     ${isValid ? '✓ VERIFIED (equals zero)' : '✗ ERROR (should be zero!)'}
                 </div>
             `;
@@ -344,6 +382,8 @@
                             <th>Incr Hedge</th>
                             <th>Cum Hedge</th>
                             <th>Avg Spot</th>
+                            <th>Realized P&L</th>
+                            <th>Unrealized P&L</th>
                             <th>Hedge P&L</th>
                             <th>Option Value</th>
                             <th>Premium</th>
@@ -359,13 +399,15 @@
                         <td>${r.time}</td>
                         <td>${formatNumber(r.spot)}</td>
                         <td>${formatNumber(r.delta)}</td>
-                        <td>${formatMillion(r.incrementalHedge)}</td>
-                        <td>${formatMillion(r.cumulativeHedge)}</td>
+                        <td>${formatThousand(r.incrementalHedge)}</td>
+                        <td>${formatThousand(r.cumulativeHedge)}</td>
                         <td>${r.avgSpot !== 0 ? formatNumber(r.avgSpot) : '-'}</td>
-                        <td>${formatMillion(r.hedgePnL)}</td>
-                        <td>${formatMillion(r.optionValue)}</td>
-                        <td>${formatMillion(r.premium)}</td>
-                        <td>${formatMillion(r.portfolioValue)}</td>
+                        <td>${formatThousand(r.realizedPnL)}</td>
+                        <td>${formatThousand(r.unrealizedPnL)}</td>
+                        <td>${formatThousand(r.hedgePnL)}</td>
+                        <td>${formatThousand(r.optionValue)}</td>
+                        <td>${formatThousand(r.premium)}</td>
+                        <td>${formatThousand(r.portfolioValue)}</td>
                     </tr>
                 `;
             });
@@ -391,14 +433,23 @@
                         (Negative because we're SHORT the hedge to offset LONG call)
                     </div>
                     <div class="formula">
-                        <strong>Weighted Avg Spot:</strong> Σ(Incremental_Hedge × Spot) / Cumulative_Hedge
+                        <strong>Weighted Avg Spot:</strong> Σ(Incremental_Hedge × Spot) / Cumulative_Hedge<br>
+                        (Resets when position crosses zero or is fully closed)
                     </div>
                     <div class="formula">
-                        <strong>Hedge P&L:</strong> Cumulative_Hedge × (Current_Spot - Avg_Spot)<br>
-                        (Standard P&L formula: Position × (Current_Price - Entry_Price))
+                        <strong>Realized P&L:</strong> Accumulated P&L from closed/reduced positions<br>
+                        When closing amount C at price S with avg A: Realized += C × (S - A)
                     </div>
                     <div class="formula">
-                        <strong>Portfolio Value:</strong> Premium_Paid + Option_Value + Hedge_P&L
+                        <strong>Unrealized P&L:</strong> Mark-to-market on current position<br>
+                        = Cumulative_Hedge × (Current_Spot - Avg_Spot)<br>
+                        = 0 when Cumulative_Hedge = 0
+                    </div>
+                    <div class="formula">
+                        <strong>Total Hedge P&L:</strong> Realized_P&L + Unrealized_P&L
+                    </div>
+                    <div class="formula">
+                        <strong>Portfolio Value:</strong> Premium_Paid + Option_Value + Total_Hedge_P&L
                     </div>
                 </div>
             `;
