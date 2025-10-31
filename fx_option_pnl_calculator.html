@@ -287,9 +287,9 @@
                 const avgSpot = cumulativeHedge !== 0 ? weightedSumHedge / cumulativeHedge : 0;
 
                 // Calculate hedge P&L
-                // Hedge P&L = -Cumulative_Hedge × (Current_Spot - Avg_Spot)
-                // Negative sign because we're SHORT the hedge
-                const hedgePnL = cumulativeHedge !== 0 ? -cumulativeHedge * (spot - avgSpot) : 0;
+                // Hedge P&L = Cumulative_Hedge × (Current_Spot - Avg_Spot)
+                // Standard P&L formula: Position × (Current_Price - Entry_Price)
+                const hedgePnL = cumulativeHedge !== 0 ? cumulativeHedge * (spot - avgSpot) : 0;
 
                 // Calculate portfolio value
                 // Portfolio = Premium_Paid + Option_Value + Hedge_P&L
@@ -394,8 +394,8 @@
                         <strong>Weighted Avg Spot:</strong> Σ(Incremental_Hedge × Spot) / Cumulative_Hedge
                     </div>
                     <div class="formula">
-                        <strong>Hedge P&L:</strong> -Cumulative_Hedge × (Current_Spot - Avg_Spot)<br>
-                        (Represents mark-to-market P&L on all hedge positions)
+                        <strong>Hedge P&L:</strong> Cumulative_Hedge × (Current_Spot - Avg_Spot)<br>
+                        (Standard P&L formula: Position × (Current_Price - Entry_Price))
                     </div>
                     <div class="formula">
                         <strong>Portfolio Value:</strong> Premium_Paid + Option_Value + Hedge_P&L
