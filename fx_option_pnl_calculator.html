@@ -292,49 +292,35 @@
 
         /**
          * Calculate strike for target delta using DIRECT closed-form formula
-         * @param {number} S - Spot price
-         * @param {number} T - Time to expiry in years
-         * @param {number} sigma - Volatility (annualized)
+         * @param {number} spot - Spot price (e.g., 1.1000)
+         * @param {number} annualizedVol - Annual volatility (e.g., 0.10 for 10%)
+         * @param {number} timeInYears - Time to expiry in years (e.g., 1/365 for 1-day)
          * @param {number} targetDelta - Target delta value
-         *   For puts: negative (e.g., -0.25 for 25-delta put)
-         *   For calls: positive (e.g., 0.25 for 25-delta call)
-         * @param {string} optionType - 'call' or 'put'
+         *   For puts: negative (e.g., -0.25, -0.10)
+         *   For calls: positive (e.g., +0.25, +0.10)
          * @returns {number} Strike price that produces the target delta
          *
-         * Formula derivation:
-         *   Call delta = N(d1), so d1 = N^(-1)(delta)
-         *   Put delta = N(d1) - 1, so d1 = N^(-1)(delta + 1)
-         *
-         *   From Black-Scholes: d1 = [ln(S/K) + 0.5×σ²×T] / (σ√T)
-         *   Solving for K: K = S × exp(-(d1 × σ√T - 0.5 × σ²T))
-         *
-         * Example (S=1.1000, σ=10%, T=1/365):
-         *   25Δ Put: K = 1.0961 ✓
-         *   10Δ Put: K = 1.0926 ✓
-         *   25Δ Call: K = 1.1039 ✓
-         *   10Δ Call: K = 1.1074 ✓
+         * Example (spot=1.1000, vol=10%, time=1/365):
+         *   10Δ Put:  K = 1.0926 (below spot) ✓
+         *   25Δ Put:  K = 1.0961 (below spot) ✓
+         *   25Δ Call: K = 1.1039 (above spot) ✓
+         *   10Δ Call: K = 1.1074 (above spot) ✓
          */
-        function solveStrikeForDelta(S, T, sigma, targetDelta, optionType) {
-            // Step 1: Calculate helper values
-            const sigma_sqrt_T = sigma * Math.sqrt(T);
-            const adjustment = 0.5 * sigma * sigma * T;
+        function calculateStrike(spot, annualizedVol, timeInYears, targetDelta) {
+            // Step 1: Calculate vol adjusted for time
+            const volSqrtT = annualizedVol * Math.sqrt(timeInYears);
 
-            // Step 2: Find d1 based on option type and target delta
-            let d1;
-            if (optionType === 'call') {
-                // For calls: delta = N(d1), so d1 = N^(-1)(delta)
-                d1 = normInv(targetDelta);
-            } else {
-                // For puts: delta = N(d1) - 1, so N(d1) = delta + 1
-                // Therefore: d1 = N^(-1)(delta + 1)
-                d1 = normInv(targetDelta + 1);
-            }
+            // Step 2: Convert delta to d1
+            // For puts (negative delta), we need N(d1) = delta + 1
+            // For calls (positive delta), we need N(d1) = delta
+            const d1Input = (targetDelta < 0) ? (targetDelta + 1.0) : targetDelta;
+            const d1 = normInv(d1Input);
 
-            // Step 3: Calculate strike using direct formula
-            // K = S × exp(-(d1 × σ√T - 0.5 × σ²T))
-            const K = S * Math.exp(-(d1 * sigma_sqrt_T - adjustment));
+            // Step 3: Calculate strike
+            const logMoneyness = d1 * volSqrtT - 0.5 * annualizedVol * annualizedVol * timeInYears;
+            const strike = spot * Math.exp(-logMoneyness);
 
-            return K;
+            return strike;
         }
 
         /**
@@ -369,7 +355,7 @@
         /**
          * Calculate P&L for a single strike
          */
-        function calculateStrike(spots, strike, timeInYears, sigma, optionType) {
+        function calculateStrikePnL(spots, strike, timeInYears, sigma, optionType) {
             let results = [];
             let cumulativeHedge = 0;
             let weightedSumHedge = 0;
@@ -487,11 +473,11 @@
             const T0 = timeInYears[0];
 
             const strikes = [
-                { name: '10Δ Put', strike: solveStrikeForDelta(S0, T0, sigma, -0.10, 'put'), type: 'put' },
-                { name: '25Δ Put', strike: solveStrikeForDelta(S0, T0, sigma, -0.25, 'put'), type: 'put' },
+                { name: '10Δ Put', strike: calculateStrike(S0, sigma, T0, -0.10), type: 'put' },
+                { name: '25Δ Put', strike: calculateStrike(S0, sigma, T0, -0.25), type: 'put' },
                 { name: 'ATM Call', strike: S0, type: 'call' },
-                { name: '25Δ Call', strike: solveStrikeForDelta(S0, T0, sigma, 0.25, 'call'), type: 'call' },
-                { name: '10Δ Call', strike: solveStrikeForDelta(S0, T0, sigma, 0.10, 'call'), type: 'call' }
+                { name: '25Δ Call', strike: calculateStrike(S0, sigma, T0, 0.25), type: 'call' },
+                { name: '10Δ Call', strike: calculateStrike(S0, sigma, T0, 0.10), type: 'call' }
             ];
 
             // Calculate P&L for each strike
@@ -499,7 +485,7 @@
                 name: s.name,
                 strike: s.strike,
                 type: s.type,
-                results: calculateStrike(spots, s.strike, timeInYears, sigma, s.type)
+                results: calculateStrikePnL(spots, s.strike, timeInYears, sigma, s.type)
             }));
 
             // Display results
