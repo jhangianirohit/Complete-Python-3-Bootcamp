@@ -403,6 +403,29 @@
             return spots;
         }
 
+        function calculateRealizedVolatility(spotPrices) {
+            // Calculate log returns
+            // For i=1 to n-1: return[i] = ln(Spot[i] / Spot[i-1])
+            const returns = [];
+            for (let i = 1; i < spotPrices.length; i++) {
+                returns.push(Math.log(spotPrices[i] / spotPrices[i-1]));
+            }
+
+            // Calculate 24-hour variance (sum of squared returns, NOT divided by n)
+            // This represents variance over the entire 24-hour period
+            const variance24h = returns.reduce((sum, r) => sum + r*r, 0);
+
+            // Annualize (multiply by 365 since we have 1 day of data)
+            // TODO: Calculate time_covered_days from datetime stamps when available
+            const timeCoveredDays = 1.0;  // Currently hard-coded for 24-hour data
+            const annualizedVariance = variance24h * (365 / timeCoveredDays);
+
+            // Get volatility
+            const realizedVol = Math.sqrt(annualizedVariance);
+
+            return realizedVol; // Returns decimal (e.g., 0.3507 for 35.07%)
+        }
+
         function calculateStrikePnL(spots, strike, sigma, optionType, baseNotional) {
             let results = [];
             let cumulativeHedge = 0;
@@ -520,6 +543,12 @@
             const sigma = volPercent / 100;
             console.log("Volatility:", volPercent + "%", "Sigma:", sigma);
 
+            // Calculate realized volatility from spot series
+            console.log("Calculating realized volatility...");
+            const realizedVol = calculateRealizedVolatility(spots);
+            const realizedVolPercent = realizedVol * 100;
+            console.log("Realized volatility:", realizedVolPercent.toFixed(2) + "%");
+
             // Calculate strikes
             const S0 = spots[0];
             const T0 = 1 / 365; // 1 day
@@ -556,7 +585,7 @@
 
             console.log("Calling displayResults...");
             try {
-                displayResults(allResults, strikes);
+                displayResults(allResults, strikes, spots, volPercent, realizedVolPercent);
             } catch (error) {
                 console.error("ERROR in displayResults:", error);
                 console.error("Stack trace:", error.stack);
@@ -564,7 +593,7 @@
             console.log("=== CALCULATION END ===");
         }
 
-        function displayResults(allResults, strikes) {
+        function displayResults(allResults, strikes, spots, impliedVolPercent, realizedVolPercent) {
             console.log("=== DISPLAY RESULTS START ===");
             console.log("allResults:", allResults.length, "strikes");
 
@@ -590,9 +619,27 @@
                 return;
             }
 
+            // Calculate spot range
+            const initialSpot = spots[0];
+            const finalSpot = spots[spots.length - 1];
+            const volDifference = realizedVolPercent - impliedVolPercent;
+            const volDifferenceSign = volDifference >= 0 ? '+' : '';
+
+            // Display Analysis Summary
+            console.log("Building analysis summary...");
+            let analysisHTML = '<div class="verification"><strong>Analysis Summary:</strong><br>';
+            analysisHTML += `• Time Period: 24 hours (1440 minutes, 145 data points)<br>`;
+            analysisHTML += `• Spot Range: ${formatNumber(initialSpot)} → ${formatNumber(finalSpot)}<br>`;
+            analysisHTML += `• Implied Volatility (input): ${impliedVolPercent.toFixed(2)}%<br>`;
+            analysisHTML += `• <strong>Realized Volatility: ${realizedVolPercent.toFixed(2)}%</strong><br>`;
+            analysisHTML += `• Realized vs Implied: ${volDifferenceSign}${volDifference.toFixed(2)} percentage points`;
+            analysisHTML += '</div>';
+            strikesInfoDiv.innerHTML = analysisHTML;
+            console.log("Analysis summary set");
+
             // Display calculated strikes
             console.log("Building strikes HTML...");
-            let strikesHTML = '<div class="verification"><strong>Calculated Strikes (with t=0 Delta):</strong><br>';
+            let strikesHTML = '<div class="verification" style="margin-top: 10px;"><strong>Calculated Strikes (with t=0 Delta):</strong><br>';
             allResults.forEach((r, idx) => {
                 const initialDelta = r.results[0].delta;
                 strikesHTML += `${r.name}: Strike = ${formatNumber(r.strike)}, Δ = ${formatNumber(initialDelta, 3)}`;
@@ -600,23 +647,26 @@
             });
             strikesHTML += '<br><strong>Verification:</strong> Strikes ordered: 10Δ Put &lt; 25Δ Put &lt; ATM &lt; 25Δ Call &lt; 10Δ Call</div>';
             console.log("Strikes HTML length:", strikesHTML.length);
-            strikesInfoDiv.innerHTML = strikesHTML;
-            console.log("Strikes HTML set, div has", strikesInfoDiv.children.length, "children");
+            strikesInfoDiv.innerHTML += strikesHTML;
+            console.log("Strikes HTML appended, div has", strikesInfoDiv.children.length, "children");
 
             // Create summary table
             console.log("Building summary table...");
             let summaryHTML = '<h2>Summary - Final P&L Across All Strikes (100M Settlement Currency)</h2>';
             summaryHTML += '<table class="summary-table"><thead><tr>';
-            summaryHTML += '<th>Strike Type</th><th>Strike Price</th><th>Base Notional</th><th>Final Portfolio P&L</th></tr></thead><tbody>';
+            summaryHTML += '<th>Strike Type</th><th>Strike Price</th><th>Base Notional</th>';
+            summaryHTML += '<th>Implied Vol</th><th>Realized Vol</th><th>Final Portfolio P&L</th></tr></thead><tbody>';
 
             let totalPnL = 0;
             allResults.forEach(r => {
                 const finalPnL = r.results[r.results.length - 1].portfolioValue;
                 totalPnL += finalPnL;
-                summaryHTML += `<tr><td>${r.name}</td><td>${formatNumber(r.strike)}</td><td>${formatMillion(r.baseNotional)} EUR</td><td>${formatThousand(finalPnL)}</td></tr>`;
+                summaryHTML += `<tr><td>${r.name}</td><td>${formatNumber(r.strike)}</td><td>${formatMillion(r.baseNotional)} EUR</td>`;
+                summaryHTML += `<td>${impliedVolPercent.toFixed(2)}%</td><td>${realizedVolPercent.toFixed(2)}%</td>`;
+                summaryHTML += `<td>${formatThousand(finalPnL)}</td></tr>`;
             });
 
-            summaryHTML += `<tr><td colspan="3"><strong>TOTAL</strong></td><td><strong>${formatThousand(totalPnL)}</strong></td></tr>`;
+            summaryHTML += `<tr><td colspan="5"><strong>TOTAL</strong></td><td><strong>${formatThousand(totalPnL)}</strong></td></tr>`;
             summaryHTML += '</tbody></table>';
 
             console.log("Summary HTML length:", summaryHTML.length);
