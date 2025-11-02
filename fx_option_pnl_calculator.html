@@ -518,6 +518,8 @@
             let realizedPnL = 0;
             let previousDelta = 0;
             let lastHedgePnL = 0; // Track last hedge P&L for final row if needed
+            let lastCumulativeHedge = 0; // Track last cumulative hedge position
+            let lastAvgSpot = 0; // Track last weighted avg spot
 
             // Calculate premium at t=0
             const totalDays = totalMinutes / (24 * 60);
@@ -590,8 +592,10 @@
                 const hedgePnL = realizedPnL + unrealizedPnL;
                 const portfolioValue = premiumPaid + (optionValue * baseNotional) + hedgePnL;
 
-                // Save last hedge P&L for potential final row
+                // Save state for potential final row mark-to-market calculation
                 lastHedgePnL = hedgePnL;
+                lastCumulativeHedge = cumulativeHedge;
+                lastAvgSpot = avgSpot;
 
                 results.push({
                     time: hedgeTime,
@@ -615,26 +619,34 @@
             // Check if final time is not a hedge time
             const lastHedgeTime = hedgeTimes[hedgeTimes.length - 1];
             if (lastHedgeTime < totalMinutes) {
-                // Add final row with option value only, hedge P&L from last hedge
+                // Add final row with mark-to-market at current spot
                 const finalSpot = spots[spots.length - 1];
                 const T = 0; // At expiry
                 const optionValue = optionType === 'call'
                     ? blackScholesCall(finalSpot, strike, T, sigma)
                     : blackScholesPut(finalSpot, strike, T, sigma);
 
-                // Portfolio value uses last hedge P&L (no new hedging)
-                const portfolioValue = premiumPaid + (optionValue * baseNotional) + lastHedgePnL;
+                // CRITICAL FIX: Mark-to-market hedge P&L at CURRENT spot (finalSpot)
+                // Hedge position stays same as last hedge, but revalue at current spot
+                // Formula: Hedge_P&L = Cumulative_Hedge × (Current_Spot - Weighted_Avg_Spot)
+                const unrealizedPnL = lastCumulativeHedge !== 0
+                    ? lastCumulativeHedge * (finalSpot - lastAvgSpot)
+                    : 0;
+                const hedgePnL = realizedPnL + unrealizedPnL;
+
+                // Portfolio value uses mark-to-market hedge P&L
+                const portfolioValue = premiumPaid + (optionValue * baseNotional) + hedgePnL;
 
                 results.push({
                     time: totalMinutes,
                     spot: finalSpot,
                     delta: null, // No delta calculation at non-hedge time
                     incrementalHedge: null,
-                    cumulativeHedge: null,
-                    avgSpot: null,
-                    realizedPnL: null,
-                    unrealizedPnL: null,
-                    hedgePnL: lastHedgePnL, // From last hedge
+                    cumulativeHedge: lastCumulativeHedge, // Show position from last hedge
+                    avgSpot: lastAvgSpot, // Show avg spot from last hedge
+                    realizedPnL: realizedPnL,
+                    unrealizedPnL: unrealizedPnL,
+                    hedgePnL: hedgePnL, // Mark-to-market at current spot
                     optionValue: optionValue * baseNotional,
                     premium: premiumPaid,
                     portfolioValue: portfolioValue,
@@ -859,12 +871,14 @@
                     resultsHTML += '<tr>';
                     resultsHTML += `<td>${r.time}</td>`;
                     resultsHTML += `<td>${formatNumber(r.spot)}</td>`;
-                    // Handle null values for non-hedge times
+                    // Handle null values for non-hedge times (delta and incremental hedge only)
                     resultsHTML += `<td>${r.delta !== null ? formatNumber(r.delta, 3) : '--'}</td>`;
                     resultsHTML += `<td>${r.incrementalHedge !== null ? formatMillion(r.incrementalHedge) : '--'}</td>`;
+                    // Cumulative hedge and avg spot are shown even at final time (from last hedge)
                     resultsHTML += `<td>${r.cumulativeHedge !== null ? formatMillion(r.cumulativeHedge) : '--'}</td>`;
                     resultsHTML += `<td>${r.avgSpot !== null && r.avgSpot !== 0 ? formatNumber(r.avgSpot) : '--'}</td>`;
-                    resultsHTML += `<td>${r.hedgePnL !== null ? formatThousand(r.hedgePnL) : '--'}</td>`;
+                    // Hedge P&L is always shown (mark-to-market at current spot)
+                    resultsHTML += `<td>${formatThousand(r.hedgePnL)}</td>`;
                     resultsHTML += `<td>${formatThousand(r.optionValue)}</td>`;
                     resultsHTML += `<td>${formatThousand(r.premium)}</td>`;
                     resultsHTML += `<td>${formatThousand(r.portfolioValue)}</td>`;
