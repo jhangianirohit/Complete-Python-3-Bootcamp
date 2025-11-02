@@ -167,7 +167,7 @@
         <div class="info-box">
             <strong>Configuration:</strong> EURUSD Options (5 strikes), Notional: 100M Settlement Currency (USD) per strike
             <br><strong>Note:</strong> Base currency (EUR) notional varies by strike: Base Notional = 100M / Strike
-            <br><strong>Time Period:</strong> 24 hours (1440 minutes) with 10-minute intervals = 145 data points
+            <br><strong>Data Format:</strong> Variable-length spot series, 10-minute sampling intervals
             <br><strong>Model:</strong> Black-Scholes with r=0, q=0
             <br><strong>Strikes:</strong> 10Δ Put, 25Δ Put, ATM Call, 25Δ Call, 10Δ Call
         </div>
@@ -178,6 +178,10 @@
                 <input type="number" id="initialSpot" step="0.0001" value="1.1000">
             </div>
             <div class="input-group">
+                <label>Hours of Data (for test data generation):</label>
+                <input type="number" id="hoursOfData" step="1" value="24" min="0.167" max="1000">
+            </div>
+            <div class="input-group">
                 <label>Implied Volatility (%):</label>
                 <input type="number" id="vol" step="0.1" value="10">
             </div>
@@ -185,8 +189,8 @@
 
         <div class="input-section">
             <div class="input-group input-group-full">
-                <label>Spot Price Series (145 values, one per line, starting at t=0 minutes):</label>
-                <textarea id="spotSeries" rows="10" placeholder="Paste 145 spot prices here, one per line..."></textarea>
+                <label>Spot Price Series (one per line, 10-minute intervals):</label>
+                <textarea id="spotSeries" rows="10" placeholder="Paste spot prices here, one per line (minimum 2 values, 10-minute intervals)..."></textarea>
                 <div style="margin-top: 5px;">
                     <button class="secondary" onclick="generateTestData()">Generate Test Data</button>
                     <button onclick="calculate()">Calculate All Strikes</button>
@@ -203,9 +207,9 @@
     <script>
         // Constants
         const SETTLEMENT_NOTIONAL = 100_000_000; // 100 million USD (settlement currency)
-        const MINUTES_IN_DAY = 1440;
-        const NUM_POINTS = 145; // 0, 10, 20, ..., 1440
-        const INTERVAL_MINUTES = 10;
+        const INTERVAL_MINUTES = 10; // 10-minute sampling frequency
+        const MIN_POINTS = 2; // Minimum data points (need at least 1 interval)
+        const MAX_POINTS = 10000; // Maximum data points (reasonable limit)
 
         // ============ STRIKE CALCULATION - EXACT CODE ============
 
@@ -355,11 +359,33 @@
                 return;
             }
 
+            const hoursOfData = parseFloat(document.getElementById('hoursOfData').value);
+            if (isNaN(hoursOfData) || hoursOfData <= 0) {
+                showValidationMessage('Please enter valid hours of data (e.g., 1, 24, 48)', 'error');
+                return;
+            }
+
+            // Calculate number of points: hours * 60 / 10 + 1
+            // Example: 24 hours = 24 * 60 / 10 + 1 = 144 + 1 = 145 points
+            const totalMinutes = hoursOfData * 60;
+            const numIntervals = Math.floor(totalMinutes / INTERVAL_MINUTES);
+            const numPoints = numIntervals + 1;
+
+            if (numPoints < MIN_POINTS) {
+                showValidationMessage(`Hours too small. Minimum ${MIN_POINTS} points needed (${((MIN_POINTS - 1) * INTERVAL_MINUTES / 60).toFixed(2)} hours)`, 'error');
+                return;
+            }
+
+            if (numPoints > MAX_POINTS) {
+                showValidationMessage(`Hours too large. Maximum ${MAX_POINTS} points allowed (${((MAX_POINTS - 1) * INTERVAL_MINUTES / 60).toFixed(0)} hours)`, 'error');
+                return;
+            }
+
             const spots = [initialSpot];
             let currentSpot = initialSpot;
 
-            // Generate 144 more values with random walk
-            for (let i = 1; i < NUM_POINTS; i++) {
+            // Generate random walk data
+            for (let i = 1; i < numPoints; i++) {
                 // Random move: ±0.01% to ±0.05% per 10 minutes
                 const randomMove = (Math.random() - 0.5) * 0.0008 * currentSpot;
                 currentSpot = currentSpot + randomMove;
@@ -368,7 +394,7 @@
 
             // Fill textarea
             document.getElementById('spotSeries').value = spots.map(s => s.toFixed(4)).join('\n');
-            showValidationMessage('Test data generated successfully (145 values)', 'verification');
+            showValidationMessage(`Test data generated successfully (${numPoints} values, ${hoursOfData} hours)`, 'verification');
         }
 
         function showValidationMessage(message, type = 'verification') {
@@ -385,8 +411,13 @@
 
             const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-            if (lines.length !== NUM_POINTS) {
-                showValidationMessage(`Error: Expected ${NUM_POINTS} values, got ${lines.length}`, 'error');
+            if (lines.length < MIN_POINTS) {
+                showValidationMessage(`Error: Minimum ${MIN_POINTS} values required, got ${lines.length}`, 'error');
+                return null;
+            }
+
+            if (lines.length > MAX_POINTS) {
+                showValidationMessage(`Error: Maximum ${MAX_POINTS} values allowed, got ${lines.length}`, 'error');
                 return null;
             }
 
@@ -403,7 +434,7 @@
             return spots;
         }
 
-        function calculateRealizedVolatility(spotPrices) {
+        function calculateRealizedVolatility(spotPrices, totalDays) {
             // Calculate log returns
             // For i=1 to n-1: return[i] = ln(Spot[i] / Spot[i-1])
             const returns = [];
@@ -411,14 +442,13 @@
                 returns.push(Math.log(spotPrices[i] / spotPrices[i-1]));
             }
 
-            // Calculate 24-hour variance (sum of squared returns, NOT divided by n)
-            // This represents variance over the entire 24-hour period
-            const variance24h = returns.reduce((sum, r) => sum + r*r, 0);
+            // Calculate total period variance (sum of squared returns, NOT divided by n)
+            // This represents variance over the entire period
+            const varianceTotalPeriod = returns.reduce((sum, r) => sum + r*r, 0);
 
-            // Annualize (multiply by 365 since we have 1 day of data)
-            // TODO: Calculate time_covered_days from datetime stamps when available
-            const timeCoveredDays = 1.0;  // Currently hard-coded for 24-hour data
-            const annualizedVariance = variance24h * (365 / timeCoveredDays);
+            // Annualize based on actual days covered
+            // Example: 1 day → multiply by 365, 2 days → multiply by 182.5, etc.
+            const annualizedVariance = varianceTotalPeriod * (365 / totalDays);
 
             // Get volatility
             const realizedVol = Math.sqrt(annualizedVariance);
@@ -426,7 +456,7 @@
             return realizedVol; // Returns decimal (e.g., 0.3507 for 35.07%)
         }
 
-        function calculateStrikePnL(spots, strike, sigma, optionType, baseNotional) {
+        function calculateStrikePnL(spots, strike, sigma, optionType, baseNotional, totalMinutes) {
             let results = [];
             let cumulativeHedge = 0;
             let weightedSumHedge = 0;
@@ -435,20 +465,22 @@
             let previousDelta = 0;
 
             // Calculate premium at t=0
-            const T0 = 1 / 365; // 1 day in years
+            // totalMinutes is the entire period length
+            const totalDays = totalMinutes / (24 * 60);
+            const T0 = totalDays / 365; // Initial time to expiry in years
             const premium = optionType === 'call'
                 ? blackScholesCall(spots[0], strike, T0, sigma)
                 : blackScholesPut(spots[0], strike, T0, sigma);
             const premiumPaid = -premium * baseNotional;
 
-            for (let i = 0; i < NUM_POINTS; i++) {
+            const numPoints = spots.length;
+            for (let i = 0; i < numPoints; i++) {
                 const timeMinutes = i * INTERVAL_MINUTES;
                 const spot = spots[i];
 
                 // Time remaining in years
-                const minutesRemaining = MINUTES_IN_DAY - timeMinutes;
-                const daysRemaining = minutesRemaining / MINUTES_IN_DAY;
-                const T = daysRemaining / 365;
+                const minutesRemaining = totalMinutes - timeMinutes;
+                const T = minutesRemaining / (365 * 24 * 60);
 
                 // Calculate option value and delta
                 const optionValue = optionType === 'call'
@@ -537,7 +569,20 @@
             console.log("Spots parsed successfully:", spots.length, "values");
             console.log("First spot:", spots[0], "Last spot:", spots[spots.length - 1]);
 
-            showValidationMessage(`✓ Validated ${NUM_POINTS} spot prices`, 'verification');
+            // Calculate time period from number of data points
+            const numPoints = spots.length;
+            const numIntervals = numPoints - 1;
+            const totalMinutes = numIntervals * INTERVAL_MINUTES;
+            const totalHours = totalMinutes / 60;
+            const totalDays = totalHours / 24;
+            const timeYears = totalDays / 365;
+
+            console.log("Time period:", totalMinutes, "minutes =", totalHours, "hours =", totalDays, "days");
+
+            showValidationMessage(
+                `✓ Validated ${numPoints} spot prices representing ${totalHours.toFixed(1)} hours (${totalDays.toFixed(2)} days) of 10-minute data`,
+                'verification'
+            );
 
             const volPercent = parseFloat(document.getElementById('vol').value);
             const sigma = volPercent / 100;
@@ -545,14 +590,14 @@
 
             // Calculate realized volatility from spot series
             console.log("Calculating realized volatility...");
-            const realizedVol = calculateRealizedVolatility(spots);
+            const realizedVol = calculateRealizedVolatility(spots, totalDays);
             const realizedVolPercent = realizedVol * 100;
             console.log("Realized volatility:", realizedVolPercent.toFixed(2) + "%");
 
-            // Calculate strikes
+            // Calculate strikes at inception
             const S0 = spots[0];
-            const T0 = 1 / 365; // 1 day
-            console.log("Initial spot (S0):", S0, "Time (T0):", T0);
+            const T0 = timeYears; // Time to expiry in years
+            console.log("Initial spot (S0):", S0, "Time to expiry (T0):", T0, "years");
 
             console.log("Calculating strikes...");
             const strikes = [
@@ -576,7 +621,7 @@
                     strike: s.strike,
                     type: s.type,
                     baseNotional: baseNotional,
-                    results: calculateStrikePnL(spots, s.strike, sigma, s.type, baseNotional)
+                    results: calculateStrikePnL(spots, s.strike, sigma, s.type, baseNotional, totalMinutes)
                 };
                 console.log(`  Calculated ${result.results.length} time points`);
                 return result;
@@ -585,7 +630,7 @@
 
             console.log("Calling displayResults...");
             try {
-                displayResults(allResults, strikes, spots, volPercent, realizedVolPercent);
+                displayResults(allResults, strikes, spots, volPercent, realizedVolPercent, totalHours, totalDays, numPoints);
             } catch (error) {
                 console.error("ERROR in displayResults:", error);
                 console.error("Stack trace:", error.stack);
@@ -593,7 +638,7 @@
             console.log("=== CALCULATION END ===");
         }
 
-        function displayResults(allResults, strikes, spots, impliedVolPercent, realizedVolPercent) {
+        function displayResults(allResults, strikes, spots, impliedVolPercent, realizedVolPercent, totalHours, totalDays, numPoints) {
             console.log("=== DISPLAY RESULTS START ===");
             console.log("allResults:", allResults.length, "strikes");
 
@@ -628,7 +673,9 @@
             // Display Analysis Summary
             console.log("Building analysis summary...");
             let analysisHTML = '<div class="verification"><strong>Analysis Summary:</strong><br>';
-            analysisHTML += `• Time Period: 24 hours (1440 minutes, 145 data points)<br>`;
+            analysisHTML += `• Data Points: ${numPoints}<br>`;
+            analysisHTML += `• Time Period: ${totalHours.toFixed(1)} hours (${totalDays.toFixed(2)} days)<br>`;
+            analysisHTML += `• Sampling Frequency: ${INTERVAL_MINUTES} minutes<br>`;
             analysisHTML += `• Spot Range: ${formatNumber(initialSpot)} → ${formatNumber(finalSpot)}<br>`;
             analysisHTML += `• Implied Volatility (input): ${impliedVolPercent.toFixed(2)}%<br>`;
             analysisHTML += `• <strong>Realized Volatility: ${realizedVolPercent.toFixed(2)}%</strong><br>`;
@@ -680,7 +727,7 @@
             allResults.forEach((strikeData, idx) => {
                 console.log(`  Building table for strike ${idx + 1}: ${strikeData.name}`);
                 resultsHTML += `<div class="strike-section">`;
-                resultsHTML += `<div class="strike-header">Strike: ${formatNumber(strikeData.strike)} (${strikeData.name}) - All ${NUM_POINTS} Time Points</div>`;
+                resultsHTML += `<div class="strike-header">Strike: ${formatNumber(strikeData.strike)} (${strikeData.name}) - All ${numPoints} Time Points</div>`;
 
                 // Verification at t=0
                 const t0Portfolio = strikeData.results[0].portfolioValue;
