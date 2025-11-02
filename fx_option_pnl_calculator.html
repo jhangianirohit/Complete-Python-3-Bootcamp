@@ -188,9 +188,30 @@
         </div>
 
         <div class="input-section">
+            <div class="input-group">
+                <label>Base Data Frequency (minutes):</label>
+                <select id="baseFrequency">
+                    <option value="10" selected>10 minutes</option>
+                    <option value="30">30 minutes</option>
+                    <option value="60">60 minutes</option>
+                    <option value="120">120 minutes</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>Hedging Frequency (minutes):</label>
+                <select id="hedgeFrequency">
+                    <option value="10">10 minutes</option>
+                    <option value="30">30 minutes</option>
+                    <option value="60" selected>60 minutes</option>
+                    <option value="120">120 minutes</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="input-section">
             <div class="input-group input-group-full">
-                <label>Spot Price Series (one per line, 10-minute intervals):</label>
-                <textarea id="spotSeries" rows="10" placeholder="Paste spot prices here, one per line (minimum 2 values, 10-minute intervals)..."></textarea>
+                <label>Spot Price Series (one per line, interval matches Base Data Frequency):</label>
+                <textarea id="spotSeries" rows="10" placeholder="Paste spot prices here, one per line (minimum 2 values)..."></textarea>
                 <div style="margin-top: 5px;">
                     <button class="secondary" onclick="generateTestData()">Generate Test Data</button>
                     <button onclick="calculate()">Calculate All Strikes</button>
@@ -207,7 +228,6 @@
     <script>
         // Constants
         const SETTLEMENT_NOTIONAL = 100_000_000; // 100 million USD (settlement currency)
-        const INTERVAL_MINUTES = 10; // 10-minute sampling frequency
         const MIN_POINTS = 2; // Minimum data points (need at least 1 interval)
         const MAX_POINTS = 10000; // Maximum data points (reasonable limit)
 
@@ -365,19 +385,21 @@
                 return;
             }
 
-            // Calculate number of points: hours * 60 / 10 + 1
-            // Example: 24 hours = 24 * 60 / 10 + 1 = 144 + 1 = 145 points
+            const baseFreq = parseInt(document.getElementById('baseFrequency').value);
+
+            // Calculate number of points: hours * 60 / base_freq + 1
+            // Example: 24 hours, base=10 → 24 * 60 / 10 + 1 = 144 + 1 = 145 points
             const totalMinutes = hoursOfData * 60;
-            const numIntervals = Math.floor(totalMinutes / INTERVAL_MINUTES);
+            const numIntervals = Math.floor(totalMinutes / baseFreq);
             const numPoints = numIntervals + 1;
 
             if (numPoints < MIN_POINTS) {
-                showValidationMessage(`Hours too small. Minimum ${MIN_POINTS} points needed (${((MIN_POINTS - 1) * INTERVAL_MINUTES / 60).toFixed(2)} hours)`, 'error');
+                showValidationMessage(`Hours too small. Minimum ${MIN_POINTS} points needed (${((MIN_POINTS - 1) * baseFreq / 60).toFixed(2)} hours)`, 'error');
                 return;
             }
 
             if (numPoints > MAX_POINTS) {
-                showValidationMessage(`Hours too large. Maximum ${MAX_POINTS} points allowed (${((MAX_POINTS - 1) * INTERVAL_MINUTES / 60).toFixed(0)} hours)`, 'error');
+                showValidationMessage(`Hours too large. Maximum ${MAX_POINTS} points allowed (${((MAX_POINTS - 1) * baseFreq / 60).toFixed(0)} hours)`, 'error');
                 return;
             }
 
@@ -386,7 +408,7 @@
 
             // Generate random walk data
             for (let i = 1; i < numPoints; i++) {
-                // Random move: ±0.01% to ±0.05% per 10 minutes
+                // Random move: ±0.01% to ±0.05% per interval
                 const randomMove = (Math.random() - 0.5) * 0.0008 * currentSpot;
                 currentSpot = currentSpot + randomMove;
                 spots.push(currentSpot);
@@ -394,7 +416,7 @@
 
             // Fill textarea
             document.getElementById('spotSeries').value = spots.map(s => s.toFixed(4)).join('\n');
-            showValidationMessage(`Test data generated successfully (${numPoints} values, ${hoursOfData} hours)`, 'verification');
+            showValidationMessage(`Test data generated successfully (${numPoints} values at ${baseFreq}-minute intervals, ${hoursOfData} hours)`, 'verification');
         }
 
         function showValidationMessage(message, type = 'verification') {
@@ -434,12 +456,44 @@
             return spots;
         }
 
-        function calculateRealizedVolatility(spotPrices, totalDays) {
-            // Calculate log returns
-            // For i=1 to n-1: return[i] = ln(Spot[i] / Spot[i-1])
+        function calculateHedgeTimes(totalMinutes, hedgeFrequency) {
+            // Calculate all hedge times: [0, hedge_freq, 2*hedge_freq, ...]
+            // Stop when hedge_time <= total_minutes
+            const hedgeTimes = [];
+            let hedgeTime = 0;
+            while (hedgeTime <= totalMinutes) {
+                hedgeTimes.push(hedgeTime);
+                hedgeTime += hedgeFrequency;
+            }
+            return hedgeTimes;
+        }
+
+        function calculateRealizedVolatility(spotPrices, totalDays, hedgeTimes, baseFreq) {
+            // Calculate returns at hedging frequency
+            // Get spot prices only at hedge times (and final time if not aligned)
+
+            const spotsAtHedgeTimes = [];
+            const numDataPoints = spotPrices.length;
+            const totalMinutes = (numDataPoints - 1) * baseFreq;
+
+            // Add spots at all hedge times
+            for (const hedgeTime of hedgeTimes) {
+                const spotIndex = hedgeTime / baseFreq;
+                if (spotIndex < numDataPoints) {
+                    spotsAtHedgeTimes.push(spotPrices[spotIndex]);
+                }
+            }
+
+            // If final time is not a hedge time, include it
+            const lastHedgeTime = hedgeTimes[hedgeTimes.length - 1];
+            if (lastHedgeTime < totalMinutes) {
+                spotsAtHedgeTimes.push(spotPrices[numDataPoints - 1]);
+            }
+
+            // Calculate log returns between consecutive hedge spots
             const returns = [];
-            for (let i = 1; i < spotPrices.length; i++) {
-                returns.push(Math.log(spotPrices[i] / spotPrices[i-1]));
+            for (let i = 1; i < spotsAtHedgeTimes.length; i++) {
+                returns.push(Math.log(spotsAtHedgeTimes[i] / spotsAtHedgeTimes[i-1]));
             }
 
             // Calculate total period variance (sum of squared returns, NOT divided by n)
@@ -456,16 +510,16 @@
             return realizedVol; // Returns decimal (e.g., 0.3507 for 35.07%)
         }
 
-        function calculateStrikePnL(spots, strike, sigma, optionType, baseNotional, totalMinutes) {
+        function calculateStrikePnL(spots, strike, sigma, optionType, baseNotional, totalMinutes, hedgeTimes, baseFreq) {
             let results = [];
             let cumulativeHedge = 0;
             let weightedSumHedge = 0;
             let avgSpot = 0;
             let realizedPnL = 0;
             let previousDelta = 0;
+            let lastHedgePnL = 0; // Track last hedge P&L for final row if needed
 
             // Calculate premium at t=0
-            // totalMinutes is the entire period length
             const totalDays = totalMinutes / (24 * 60);
             const T0 = totalDays / 365; // Initial time to expiry in years
             const premium = optionType === 'call'
@@ -473,13 +527,14 @@
                 : blackScholesPut(spots[0], strike, T0, sigma);
             const premiumPaid = -premium * baseNotional;
 
-            const numPoints = spots.length;
-            for (let i = 0; i < numPoints; i++) {
-                const timeMinutes = i * INTERVAL_MINUTES;
-                const spot = spots[i];
+            // Only process hedge times
+            for (let hedgeIdx = 0; hedgeIdx < hedgeTimes.length; hedgeIdx++) {
+                const hedgeTime = hedgeTimes[hedgeIdx];
+                const spotIndex = hedgeTime / baseFreq;
+                const spot = spots[spotIndex];
 
                 // Time remaining in years
-                const minutesRemaining = totalMinutes - timeMinutes;
+                const minutesRemaining = totalMinutes - hedgeTime;
                 const T = minutesRemaining / (365 * 24 * 60);
 
                 // Calculate option value and delta
@@ -493,7 +548,7 @@
 
                 // Calculate incremental hedge
                 let incrementalHedge;
-                if (i === 0) {
+                if (hedgeIdx === 0) {
                     incrementalHedge = -delta * baseNotional;
                 } else {
                     const deltaChange = delta - previousDelta;
@@ -535,8 +590,11 @@
                 const hedgePnL = realizedPnL + unrealizedPnL;
                 const portfolioValue = premiumPaid + (optionValue * baseNotional) + hedgePnL;
 
+                // Save last hedge P&L for potential final row
+                lastHedgePnL = hedgePnL;
+
                 results.push({
-                    time: timeMinutes,
+                    time: hedgeTime,
                     spot: spot,
                     delta: delta,
                     incrementalHedge: incrementalHedge,
@@ -547,10 +605,41 @@
                     hedgePnL: hedgePnL,
                     optionValue: optionValue * baseNotional,
                     premium: premiumPaid,
-                    portfolioValue: portfolioValue
+                    portfolioValue: portfolioValue,
+                    isHedgeTime: true
                 });
 
                 previousDelta = delta;
+            }
+
+            // Check if final time is not a hedge time
+            const lastHedgeTime = hedgeTimes[hedgeTimes.length - 1];
+            if (lastHedgeTime < totalMinutes) {
+                // Add final row with option value only, hedge P&L from last hedge
+                const finalSpot = spots[spots.length - 1];
+                const T = 0; // At expiry
+                const optionValue = optionType === 'call'
+                    ? blackScholesCall(finalSpot, strike, T, sigma)
+                    : blackScholesPut(finalSpot, strike, T, sigma);
+
+                // Portfolio value uses last hedge P&L (no new hedging)
+                const portfolioValue = premiumPaid + (optionValue * baseNotional) + lastHedgePnL;
+
+                results.push({
+                    time: totalMinutes,
+                    spot: finalSpot,
+                    delta: null, // No delta calculation at non-hedge time
+                    incrementalHedge: null,
+                    cumulativeHedge: null,
+                    avgSpot: null,
+                    realizedPnL: null,
+                    unrealizedPnL: null,
+                    hedgePnL: lastHedgePnL, // From last hedge
+                    optionValue: optionValue * baseNotional,
+                    premium: premiumPaid,
+                    portfolioValue: portfolioValue,
+                    isHedgeTime: false
+                });
             }
 
             return results;
@@ -569,18 +658,35 @@
             console.log("Spots parsed successfully:", spots.length, "values");
             console.log("First spot:", spots[0], "Last spot:", spots[spots.length - 1]);
 
+            // Read frequencies
+            const baseFreq = parseInt(document.getElementById('baseFrequency').value);
+            const hedgeFreq = parseInt(document.getElementById('hedgeFrequency').value);
+            console.log("Base frequency:", baseFreq, "minutes");
+            console.log("Hedge frequency:", hedgeFreq, "minutes");
+
+            // Validate: hedging frequency must be >= base frequency
+            if (hedgeFreq < baseFreq) {
+                showValidationMessage('Error: Hedging frequency must be greater than or equal to base data frequency', 'error');
+                console.log("Validation failed: hedgeFreq < baseFreq");
+                return;
+            }
+
             // Calculate time period from number of data points
             const numPoints = spots.length;
             const numIntervals = numPoints - 1;
-            const totalMinutes = numIntervals * INTERVAL_MINUTES;
+            const totalMinutes = numIntervals * baseFreq;
             const totalHours = totalMinutes / 60;
             const totalDays = totalHours / 24;
             const timeYears = totalDays / 365;
 
             console.log("Time period:", totalMinutes, "minutes =", totalHours, "hours =", totalDays, "days");
 
+            // Calculate hedge times
+            const hedgeTimes = calculateHedgeTimes(totalMinutes, hedgeFreq);
+            console.log("Hedge times:", hedgeTimes.length, "points -", hedgeTimes);
+
             showValidationMessage(
-                `✓ Validated ${numPoints} spot prices representing ${totalHours.toFixed(1)} hours (${totalDays.toFixed(2)} days) of 10-minute data`,
+                `✓ Validated ${numPoints} spot prices at ${baseFreq}-minute intervals, representing ${totalMinutes} minutes (${totalHours.toFixed(1)} hours) of data. Hedging every ${hedgeFreq} minutes (${hedgeTimes.length} hedge points).`,
                 'verification'
             );
 
@@ -588,9 +694,9 @@
             const sigma = volPercent / 100;
             console.log("Volatility:", volPercent + "%", "Sigma:", sigma);
 
-            // Calculate realized volatility from spot series
+            // Calculate realized volatility from spot series at hedging frequency
             console.log("Calculating realized volatility...");
-            const realizedVol = calculateRealizedVolatility(spots, totalDays);
+            const realizedVol = calculateRealizedVolatility(spots, totalDays, hedgeTimes, baseFreq);
             const realizedVolPercent = realizedVol * 100;
             console.log("Realized volatility:", realizedVolPercent.toFixed(2) + "%");
 
@@ -621,7 +727,7 @@
                     strike: s.strike,
                     type: s.type,
                     baseNotional: baseNotional,
-                    results: calculateStrikePnL(spots, s.strike, sigma, s.type, baseNotional, totalMinutes)
+                    results: calculateStrikePnL(spots, s.strike, sigma, s.type, baseNotional, totalMinutes, hedgeTimes, baseFreq)
                 };
                 console.log(`  Calculated ${result.results.length} time points`);
                 return result;
@@ -630,7 +736,7 @@
 
             console.log("Calling displayResults...");
             try {
-                displayResults(allResults, strikes, spots, volPercent, realizedVolPercent, totalHours, totalDays, numPoints);
+                displayResults(allResults, strikes, spots, volPercent, realizedVolPercent, totalHours, totalDays, numPoints, baseFreq, hedgeFreq, hedgeTimes.length);
             } catch (error) {
                 console.error("ERROR in displayResults:", error);
                 console.error("Stack trace:", error.stack);
@@ -638,7 +744,7 @@
             console.log("=== CALCULATION END ===");
         }
 
-        function displayResults(allResults, strikes, spots, impliedVolPercent, realizedVolPercent, totalHours, totalDays, numPoints) {
+        function displayResults(allResults, strikes, spots, impliedVolPercent, realizedVolPercent, totalHours, totalDays, numPoints, baseFreq, hedgeFreq, numHedgePoints) {
             console.log("=== DISPLAY RESULTS START ===");
             console.log("allResults:", allResults.length, "strikes");
 
@@ -669,15 +775,18 @@
             const finalSpot = spots[spots.length - 1];
             const volDifference = realizedVolPercent - impliedVolPercent;
             const volDifferenceSign = volDifference >= 0 ? '+' : '';
+            const totalMinutes = (numPoints - 1) * baseFreq;
 
             // Display Analysis Summary
             console.log("Building analysis summary...");
             let analysisHTML = '<div class="verification"><strong>Analysis Summary:</strong><br>';
             analysisHTML += `• Data Points: ${numPoints}<br>`;
-            analysisHTML += `• Time Period: ${totalHours.toFixed(1)} hours (${totalDays.toFixed(2)} days)<br>`;
-            analysisHTML += `• Sampling Frequency: ${INTERVAL_MINUTES} minutes<br>`;
+            analysisHTML += `• Base Data Frequency: ${baseFreq} minutes<br>`;
+            analysisHTML += `• Total Time Period: ${totalMinutes} minutes (${totalHours.toFixed(1)} hours)<br>`;
+            analysisHTML += `• Hedging Frequency: ${hedgeFreq} minutes<br>`;
+            analysisHTML += `• Number of Hedges: ${numHedgePoints}<br>`;
             analysisHTML += `• Spot Range: ${formatNumber(initialSpot)} → ${formatNumber(finalSpot)}<br>`;
-            analysisHTML += `• Implied Volatility (input): ${impliedVolPercent.toFixed(2)}%<br>`;
+            analysisHTML += `• Implied Volatility: ${impliedVolPercent.toFixed(2)}%<br>`;
             analysisHTML += `• <strong>Realized Volatility: ${realizedVolPercent.toFixed(2)}%</strong><br>`;
             analysisHTML += `• Realized vs Implied: ${volDifferenceSign}${volDifference.toFixed(2)} percentage points`;
             analysisHTML += '</div>';
@@ -726,8 +835,9 @@
 
             allResults.forEach((strikeData, idx) => {
                 console.log(`  Building table for strike ${idx + 1}: ${strikeData.name}`);
+                const numRows = strikeData.results.length;
                 resultsHTML += `<div class="strike-section">`;
-                resultsHTML += `<div class="strike-header">Strike: ${formatNumber(strikeData.strike)} (${strikeData.name}) - All ${numPoints} Time Points</div>`;
+                resultsHTML += `<div class="strike-header">Strike: ${formatNumber(strikeData.strike)} (${strikeData.name}) - ${numRows} Rows (Hedge Times + Final)</div>`;
 
                 // Verification at t=0
                 const t0Portfolio = strikeData.results[0].portfolioValue;
@@ -749,11 +859,12 @@
                     resultsHTML += '<tr>';
                     resultsHTML += `<td>${r.time}</td>`;
                     resultsHTML += `<td>${formatNumber(r.spot)}</td>`;
-                    resultsHTML += `<td>${formatNumber(r.delta, 3)}</td>`;
-                    resultsHTML += `<td>${formatMillion(r.incrementalHedge)}</td>`;
-                    resultsHTML += `<td>${formatMillion(r.cumulativeHedge)}</td>`;
-                    resultsHTML += `<td>${r.avgSpot !== 0 ? formatNumber(r.avgSpot) : '-'}</td>`;
-                    resultsHTML += `<td>${formatThousand(r.hedgePnL)}</td>`;
+                    // Handle null values for non-hedge times
+                    resultsHTML += `<td>${r.delta !== null ? formatNumber(r.delta, 3) : '--'}</td>`;
+                    resultsHTML += `<td>${r.incrementalHedge !== null ? formatMillion(r.incrementalHedge) : '--'}</td>`;
+                    resultsHTML += `<td>${r.cumulativeHedge !== null ? formatMillion(r.cumulativeHedge) : '--'}</td>`;
+                    resultsHTML += `<td>${r.avgSpot !== null && r.avgSpot !== 0 ? formatNumber(r.avgSpot) : '--'}</td>`;
+                    resultsHTML += `<td>${r.hedgePnL !== null ? formatThousand(r.hedgePnL) : '--'}</td>`;
                     resultsHTML += `<td>${formatThousand(r.optionValue)}</td>`;
                     resultsHTML += `<td>${formatThousand(r.premium)}</td>`;
                     resultsHTML += `<td>${formatThousand(r.portfolioValue)}</td>`;
