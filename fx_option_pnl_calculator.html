@@ -158,6 +158,30 @@
             color: #007bff;
             margin-bottom: 10px;
         }
+        .custom-strike-row {
+            display: grid;
+            grid-template-columns: 120px 140px 100px auto 80px;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .custom-strike-row input,
+        .custom-strike-row select {
+            padding: 6px;
+            font-size: 14px;
+        }
+        .custom-strike-row button {
+            padding: 6px 12px;
+            font-size: 14px;
+            margin: 0;
+        }
+        .custom-strike-label {
+            font-weight: bold;
+            color: #555;
+        }
     </style>
 </head>
 <body>
@@ -219,6 +243,19 @@
             </div>
         </div>
 
+        <div class="input-section">
+            <div class="input-group input-group-full">
+                <label><strong>Custom Strikes (Optional - Max 5)</strong></label>
+                <div id="customStrikesContainer" style="margin-top: 10px;">
+                    <!-- Custom strike rows will be added here -->
+                </div>
+                <div style="margin-top: 10px;">
+                    <button class="secondary" onclick="addCustomStrike()" id="addCustomStrikeBtn">Add Custom Strike</button>
+                    <span id="customStrikeCount" style="margin-left: 10px; color: #666;">Custom Strikes: 0/5</span>
+                </div>
+            </div>
+        </div>
+
         <div id="validation-message"></div>
         <div id="strikes-info"></div>
         <div id="summary"></div>
@@ -230,6 +267,8 @@
         const SETTLEMENT_NOTIONAL = 100_000_000; // 100 million USD (settlement currency)
         const MIN_POINTS = 2; // Minimum data points (need at least 1 interval)
         const MAX_POINTS = 10000; // Maximum data points (reasonable limit)
+        const MAX_CUSTOM_STRIKES = 5;
+        let customStrikeCounter = 0;
 
         // ============ STRIKE CALCULATION - EXACT CODE ============
 
@@ -371,6 +410,120 @@
         function formatNumber(value, decimals = 4) {
             return value.toFixed(decimals);
         }
+
+        // ============ CUSTOM STRIKES MANAGEMENT ============
+
+        function addCustomStrike() {
+            const container = document.getElementById('customStrikesContainer');
+            const currentCount = container.children.length;
+
+            if (currentCount >= MAX_CUSTOM_STRIKES) {
+                showValidationMessage('Maximum 5 custom strikes allowed', 'warning');
+                return;
+            }
+
+            const rowId = `custom-strike-${customStrikeCounter++}`;
+            const row = document.createElement('div');
+            row.className = 'custom-strike-row';
+            row.id = rowId;
+
+            row.innerHTML = `
+                <input type="number" class="custom-strike-value" step="0.0001" placeholder="Value">
+                <select class="custom-strike-mode" onchange="toggleCallPutDropdown('${rowId}')">
+                    <option value="strike">Strike Price</option>
+                    <option value="delta">Delta</option>
+                </select>
+                <select class="custom-strike-type" style="display: none;">
+                    <option value="call">Call</option>
+                    <option value="put">Put</option>
+                </select>
+                <span class="custom-strike-label"></span>
+                <button class="secondary" onclick="removeCustomStrike('${rowId}')">Remove</button>
+            `;
+
+            container.appendChild(row);
+            updateCustomStrikeCount();
+        }
+
+        function removeCustomStrike(rowId) {
+            const row = document.getElementById(rowId);
+            if (row) {
+                row.remove();
+                updateCustomStrikeCount();
+            }
+        }
+
+        function toggleCallPutDropdown(rowId) {
+            const row = document.getElementById(rowId);
+            const mode = row.querySelector('.custom-strike-mode').value;
+            const typeDropdown = row.querySelector('.custom-strike-type');
+
+            if (mode === 'delta') {
+                typeDropdown.style.display = 'block';
+            } else {
+                typeDropdown.style.display = 'none';
+            }
+        }
+
+        function updateCustomStrikeCount() {
+            const container = document.getElementById('customStrikesContainer');
+            const count = container.children.length;
+            document.getElementById('customStrikeCount').textContent = `Custom Strikes: ${count}/${MAX_CUSTOM_STRIKES}`;
+
+            const addBtn = document.getElementById('addCustomStrikeBtn');
+            addBtn.disabled = count >= MAX_CUSTOM_STRIKES;
+        }
+
+        function parseCustomStrikes(initialSpot, sigma, timeYears) {
+            const container = document.getElementById('customStrikesContainer');
+            const customStrikes = [];
+
+            for (let i = 0; i < container.children.length; i++) {
+                const row = container.children[i];
+                const value = parseFloat(row.querySelector('.custom-strike-value').value);
+                const mode = row.querySelector('.custom-strike-mode').value;
+                const type = row.querySelector('.custom-strike-type').value;
+
+                if (isNaN(value) || value <= 0) {
+                    showValidationMessage(`Custom strike ${i + 1}: Please enter a valid positive value`, 'error');
+                    return null;
+                }
+
+                let strike, optionType, label;
+
+                if (mode === 'strike') {
+                    // Strike Price mode: auto-determine Call/Put
+                    strike = value;
+                    optionType = (strike < initialSpot) ? 'put' : 'call';
+                    label = `Custom: ${strike.toFixed(4)} ${optionType.charAt(0).toUpperCase() + optionType.slice(1)}`;
+                } else {
+                    // Delta mode
+                    if (value < 0 || value > 100) {
+                        showValidationMessage(`Custom strike ${i + 1}: Delta must be between 0 and 100`, 'error');
+                        return null;
+                    }
+
+                    const deltaDecimal = value / 100;
+                    optionType = type; // User selected
+                    const targetDelta = (optionType === 'put') ? -deltaDecimal : deltaDecimal;
+
+                    // Calculate strike using delta
+                    strike = calculateStrikeFromDelta(initialSpot, sigma, timeYears, targetDelta);
+                    label = `Custom: ${value}Δ ${optionType.charAt(0).toUpperCase() + optionType.slice(1)} (Strike: ${strike.toFixed(4)})`;
+                }
+
+                customStrikes.push({
+                    name: label,
+                    strike: strike,
+                    type: optionType,
+                    isCustom: true
+                });
+            }
+
+            return customStrikes;
+        }
+
+        // ============ END CUSTOM STRIKES MANAGEMENT ============
 
         function generateTestData() {
             const initialSpot = parseFloat(document.getElementById('initialSpot').value);
@@ -717,20 +870,36 @@
             const T0 = timeYears; // Time to expiry in years
             console.log("Initial spot (S0):", S0, "Time to expiry (T0):", T0, "years");
 
-            console.log("Calculating strikes...");
-            const strikes = [
-                { name: '10Δ Put', strike: calculateStrikeFromDelta(S0, sigma, T0, -0.10), type: 'put' },
-                { name: '25Δ Put', strike: calculateStrikeFromDelta(S0, sigma, T0, -0.25), type: 'put' },
-                { name: 'ATM Call', strike: S0, type: 'call' },
-                { name: '25Δ Call', strike: calculateStrikeFromDelta(S0, sigma, T0, 0.25), type: 'call' },
-                { name: '10Δ Call', strike: calculateStrikeFromDelta(S0, sigma, T0, 0.10), type: 'call' }
+            console.log("Calculating standard strikes...");
+            const standardStrikes = [
+                { name: '10Δ Put', strike: calculateStrikeFromDelta(S0, sigma, T0, -0.10), type: 'put', isCustom: false },
+                { name: '25Δ Put', strike: calculateStrikeFromDelta(S0, sigma, T0, -0.25), type: 'put', isCustom: false },
+                { name: 'ATM Call', strike: S0, type: 'call', isCustom: false },
+                { name: '25Δ Call', strike: calculateStrikeFromDelta(S0, sigma, T0, 0.25), type: 'call', isCustom: false },
+                { name: '10Δ Call', strike: calculateStrikeFromDelta(S0, sigma, T0, 0.10), type: 'call', isCustom: false }
             ];
-            console.log("Strikes calculated:", strikes.map(s => `${s.name}: ${s.strike.toFixed(4)}`).join(', '));
+            console.log("Standard strikes calculated:", standardStrikes.map(s => `${s.name}: ${s.strike.toFixed(4)}`).join(', '));
+
+            // Parse and add custom strikes
+            console.log("Parsing custom strikes...");
+            const customStrikes = parseCustomStrikes(S0, sigma, T0);
+            if (customStrikes === null) {
+                console.log("Custom strike parsing failed, aborting");
+                return;
+            }
+            console.log("Custom strikes parsed:", customStrikes.length, "strikes");
+            if (customStrikes.length > 0) {
+                console.log("Custom strikes:", customStrikes.map(s => `${s.name}: ${s.strike.toFixed(4)}`).join(', '));
+            }
+
+            // Combine standard and custom strikes
+            const strikes = [...standardStrikes, ...customStrikes];
+            console.log("Total strikes:", strikes.length);
 
             // Calculate P&L for each strike with base notional = 100M / strike
             console.log("Starting P&L calculations for all strikes...");
             const allResults = strikes.map((s, idx) => {
-                console.log(`Calculating strike ${idx + 1}/5: ${s.name} (${s.strike.toFixed(4)})`);
+                console.log(`Calculating strike ${idx + 1}/${strikes.length}: ${s.name} (${s.strike.toFixed(4)})`);
                 const baseNotional = SETTLEMENT_NOTIONAL / s.strike;
                 console.log(`  Base notional: ${(baseNotional / 1_000_000).toFixed(1)}M`);
 
@@ -739,6 +908,7 @@
                     strike: s.strike,
                     type: s.type,
                     baseNotional: baseNotional,
+                    isCustom: s.isCustom || false,
                     results: calculateStrikePnL(spots, s.strike, sigma, s.type, baseNotional, totalMinutes, hedgeTimes, baseFreq)
                 };
                 console.log(`  Calculated ${result.results.length} time points`);
@@ -829,9 +999,19 @@
             allResults.forEach(r => {
                 const finalPnL = r.results[r.results.length - 1].portfolioValue;
                 totalPnL += finalPnL;
-                summaryHTML += `<tr><td>${r.name}</td><td>${formatNumber(r.strike)}</td><td>${formatMillion(r.baseNotional)} EUR</td>`;
+                // Show custom strikes in bold
+                const nameStyle = r.isCustom ? '<strong>' : '';
+                const nameStyleEnd = r.isCustom ? '</strong>' : '';
+                const strikeStyle = r.isCustom ? '<strong>' : '';
+                const strikeStyleEnd = r.isCustom ? '</strong>' : '';
+                const notionalStyle = r.isCustom ? '<strong>' : '';
+                const notionalStyleEnd = r.isCustom ? '</strong>' : '';
+                const pnlStyle = r.isCustom ? '<strong>' : '';
+                const pnlStyleEnd = r.isCustom ? '</strong>' : '';
+
+                summaryHTML += `<tr><td>${nameStyle}${r.name}${nameStyleEnd}</td><td>${strikeStyle}${formatNumber(r.strike)}${strikeStyleEnd}</td><td>${notionalStyle}${formatMillion(r.baseNotional)} EUR${notionalStyleEnd}</td>`;
                 summaryHTML += `<td>${impliedVolPercent.toFixed(2)}%</td><td>${realizedVolPercent.toFixed(2)}%</td>`;
-                summaryHTML += `<td>${formatThousand(finalPnL)}</td></tr>`;
+                summaryHTML += `<td>${pnlStyle}${formatThousand(finalPnL)}${pnlStyleEnd}</td></tr>`;
             });
 
             summaryHTML += `<tr><td colspan="5"><strong>TOTAL</strong></td><td><strong>${formatThousand(totalPnL)}</strong></td></tr>`;
@@ -849,7 +1029,8 @@
                 console.log(`  Building table for strike ${idx + 1}: ${strikeData.name}`);
                 const numRows = strikeData.results.length;
                 resultsHTML += `<div class="strike-section">`;
-                resultsHTML += `<div class="strike-header">Strike: ${formatNumber(strikeData.strike)} (${strikeData.name}) - ${numRows} Rows (Hedge Times + Final)</div>`;
+                const headerStyle = strikeData.isCustom ? 'style="color: #007bff; font-weight: bold;"' : '';
+                resultsHTML += `<div class="strike-header" ${headerStyle}>Strike: ${formatNumber(strikeData.strike)} (${strikeData.name}) - ${numRows} Rows (Hedge Times + Final)</div>`;
 
                 // Verification at t=0
                 const t0Portfolio = strikeData.results[0].portfolioValue;
