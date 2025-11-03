@@ -1079,38 +1079,31 @@
             });
             summaryHTML += '</tr></thead><tbody>';
 
-            // Row 1: Strike Type
-            summaryHTML += '<tr><td class="row-label"><strong>Strike Type</strong></td>';
+            // Row 1: Strike (standardized delta labels)
+            summaryHTML += '<tr><td class="row-label"><strong>Strike</strong></td>';
             allResults.forEach(r => {
-                const label = r.isCustom ? `<strong>${r.name}</strong>` : r.name;
-                summaryHTML += `<td>${label}</td>`;
+                // Get initial delta from first time point
+                const initialDelta = r.results[0].delta;
+
+                // Convert to 0-100 integer scale
+                const deltaInt = Math.round(Math.abs(initialDelta) * 100);
+
+                // Capitalize option type
+                const optionTypeLabel = r.type.charAt(0).toUpperCase() + r.type.slice(1);
+
+                // Create standardized label: "[Delta]Δ [Put/Call]"
+                const strikeLabel = `${deltaInt}Δ ${optionTypeLabel}`;
+
+                summaryHTML += `<td>${strikeLabel}</td>`;
             });
             summaryHTML += '</tr>';
 
-            // Row 2: Option Type
-            summaryHTML += '<tr><td class="row-label"><strong>Option Type</strong></td>';
-            allResults.forEach(r => {
-                const optionType = r.type.charAt(0).toUpperCase() + r.type.slice(1);
-                const typeText = r.isCustom ? `<strong>${optionType}</strong>` : optionType;
-                summaryHTML += `<td>${typeText}</td>`;
-            });
-            summaryHTML += '</tr>';
-
-            // Row 3: Strike Price
-            summaryHTML += '<tr><td class="row-label"><strong>Strike Price</strong></td>';
-            allResults.forEach(r => {
-                const strikeText = r.isCustom ? `<strong>${formatNumber(r.strike)}</strong>` : formatNumber(r.strike);
-                summaryHTML += `<td>${strikeText}</td>`;
-            });
-            summaryHTML += '</tr>';
-
-            // Row 4: Final P&L (with color coding)
+            // Row 2: Final P&L (with color coding)
             summaryHTML += '<tr><td class="row-label"><strong>Final P&L (k)</strong></td>';
             allResults.forEach((r, idx) => {
                 const finalPnL = finalPnLs[idx];
                 const pnlColors = getPnLColor(finalPnL);
-                const pnlText = r.isCustom ? `<strong>${formatThousand(finalPnL)}</strong>` : formatThousand(finalPnL);
-                summaryHTML += `<td style="background-color: ${pnlColors.bg}; color: ${pnlColors.text}; font-weight: bold;">${pnlText}</td>`;
+                summaryHTML += `<td style="background-color: ${pnlColors.bg}; color: ${pnlColors.text}; font-weight: bold;">${formatThousand(finalPnL)}</td>`;
             });
             summaryHTML += '</tr>';
 
