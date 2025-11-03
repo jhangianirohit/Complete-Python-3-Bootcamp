@@ -293,23 +293,22 @@
             font-size: 14px;
         }
         /* Make strike columns clickable */
-        .strike-summary tbody td:not(.row-label) {
-            cursor: pointer;
-            transition: background-color 0.2s;
+        .strike-header,
+        .strike-cell {
+            cursor: pointer !important;
+            transition: all 0.2s;
         }
-        .strike-summary tbody td:not(.row-label):hover {
-            opacity: 0.8;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        .strike-header:hover {
+            background-color: #0056b3 !important;
+            transform: scale(1.02);
         }
-        .strike-summary th {
-            cursor: pointer;
-            transition: background-color 0.2s;
+        .strike-cell:hover {
+            opacity: 0.85 !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transform: scale(1.02);
         }
-        .strike-summary th:first-child {
-            cursor: default;
-        }
-        .strike-summary th:not(:first-child):hover {
-            background-color: #0056b3;
+        .row-label {
+            cursor: default !important;
         }
     </style>
 </head>
@@ -1165,13 +1164,13 @@
             summaryHTML += '<table class="strike-summary"><thead><tr>';
             summaryHTML += '<th></th>'; // Empty corner cell
 
-            // Header row: strike prices (clickable)
+            // Header row: strike prices (will be made clickable via event listeners)
             allResults.forEach((r, idx) => {
-                summaryHTML += `<th onclick="showStrikeChart(${idx})" title="Click to view P&L chart">${formatNumber(r.strike)}</th>`;
+                summaryHTML += `<th data-strike-idx="${idx}" class="strike-header" title="Click to view P&L chart">${formatNumber(r.strike)}</th>`;
             });
             summaryHTML += '</tr></thead><tbody>';
 
-            // Row 1: Strike (standardized delta labels) - clickable
+            // Row 1: Strike (standardized delta labels) - will be clickable
             summaryHTML += '<tr><td class="row-label"><strong>Strike</strong></td>';
             allResults.forEach((r, idx) => {
                 // Get initial delta from first time point
@@ -1186,7 +1185,7 @@
                 // Create standardized label: "[Delta]Δ [Put/Call]"
                 const strikeLabel = `${deltaInt}Δ ${optionTypeLabel}`;
 
-                summaryHTML += `<td onclick="showStrikeChart(${idx})" title="Click to view P&L chart">${strikeLabel}</td>`;
+                summaryHTML += `<td data-strike-idx="${idx}" class="strike-cell" title="Click to view P&L chart">${strikeLabel}</td>`;
             });
             summaryHTML += '</tr>';
 
@@ -1195,7 +1194,7 @@
             allResults.forEach((r, idx) => {
                 const finalPnL = finalPnLs[idx];
                 const pnlColors = getPnLColor(finalPnL);
-                summaryHTML += `<td onclick="showStrikeChart(${idx})" title="Click to view P&L chart" style="background-color: ${pnlColors.bg}; color: ${pnlColors.text}; font-weight: bold;">${formatThousand(finalPnL)}</td>`;
+                summaryHTML += `<td data-strike-idx="${idx}" class="strike-cell" title="Click to view P&L chart" style="background-color: ${pnlColors.bg}; color: ${pnlColors.text}; font-weight: bold;">${formatThousand(finalPnL)}</td>`;
             });
             summaryHTML += '</tr>';
 
@@ -1214,6 +1213,37 @@
             console.log("Summary HTML length:", summaryHTML.length);
             summaryDiv.innerHTML = summaryHTML;
             console.log("Summary table HTML set, div has", summaryDiv.children.length, "children");
+
+            // Attach click event listeners to strike columns
+            console.log("Attaching click handlers to strike columns...");
+
+            // Get all strike headers
+            const strikeHeaders = summaryDiv.querySelectorAll('.strike-header');
+            console.log("Found", strikeHeaders.length, "strike headers");
+
+            strikeHeaders.forEach(header => {
+                const strikeIdx = parseInt(header.getAttribute('data-strike-idx'));
+                console.log("Attaching handler to header for strike", strikeIdx);
+                header.addEventListener('click', function(e) {
+                    console.log("Header clicked for strike index:", strikeIdx);
+                    showStrikeChart(strikeIdx);
+                });
+            });
+
+            // Get all strike cells
+            const strikeCells = summaryDiv.querySelectorAll('.strike-cell');
+            console.log("Found", strikeCells.length, "strike cells");
+
+            strikeCells.forEach(cell => {
+                const strikeIdx = parseInt(cell.getAttribute('data-strike-idx'));
+                console.log("Attaching handler to cell for strike", strikeIdx);
+                cell.addEventListener('click', function(e) {
+                    console.log("Cell clicked for strike index:", strikeIdx);
+                    showStrikeChart(strikeIdx);
+                });
+            });
+
+            console.log("Click handlers attached successfully");
 
             // Create individual tables for each strike
             console.log("Building individual strike tables...");
@@ -1277,13 +1307,23 @@
         let currentChart = null; // Store current chart instance
 
         function showStrikeChart(strikeIndex) {
+            console.log("=== showStrikeChart called ===");
+            console.log("Strike index:", strikeIndex);
+            console.log("window.strikeResultsData:", window.strikeResultsData);
+            console.log("window.chartMetadata:", window.chartMetadata);
+
             const strikeData = window.strikeResultsData[strikeIndex];
             const metadata = window.chartMetadata;
 
+            console.log("strikeData:", strikeData);
+            console.log("metadata:", metadata);
+
             if (!strikeData || !metadata) {
-                console.error("Strike data not available");
+                console.error("Strike data not available - strikeData:", !!strikeData, "metadata:", !!metadata);
                 return;
             }
+
+            console.log("Data validated, proceeding with chart generation...");
 
             // Prepare chart data
             const timePoints = [];
@@ -1438,11 +1478,27 @@
             });
 
             // Show modal
-            document.getElementById('chartModal').style.display = 'block';
+            console.log("Attempting to show modal...");
+            const modal = document.getElementById('chartModal');
+            console.log("Modal element:", modal);
+
+            if (!modal) {
+                console.error("CRITICAL: Modal element not found!");
+                alert("Error: Chart modal not found. Please refresh the page.");
+                return;
+            }
+
+            modal.style.display = 'block';
+            console.log("Modal display set to block. Modal should now be visible.");
+            console.log("Modal computed style display:", window.getComputedStyle(modal).display);
         }
 
         function closeChartModal() {
-            document.getElementById('chartModal').style.display = 'none';
+            console.log("closeChartModal called");
+            const modal = document.getElementById('chartModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
             if (currentChart) {
                 currentChart.destroy();
                 currentChart = null;
