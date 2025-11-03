@@ -1066,8 +1066,7 @@
                 totalPnL += finalPnL;
             });
             const averagePnL = totalPnL / allResults.length;
-            const volDifference = realizedVolPercent - impliedVolPercent;
-            const volDifferenceSign = volDifference >= 0 ? '+' : '';
+            // volDifference and volDifferenceSign already calculated above (lines 1023-1024)
 
             // Build transposed table - strikes as columns
             summaryHTML += '<div class="strike-summary-container">';
