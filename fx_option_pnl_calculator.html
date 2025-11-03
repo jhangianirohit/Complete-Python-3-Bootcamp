@@ -4,29 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FX Option P&L Calculator - 10-Minute Intervals</title>
-    <!-- Chart.js library - Primary CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <!-- Fallback verification and loading -->
-    <script>
-        // Verify Chart.js loaded successfully
-        if (typeof Chart === 'undefined') {
-            console.error('CRITICAL: Chart.js failed to load from primary CDN!');
-            console.error('Attempting fallback CDN...');
-            // Try alternate CDN (unpkg)
-            var script = document.createElement('script');
-            script.src = 'https://unpkg.com/chart.js@4.4.1/dist/chart.umd.min.js';
-            script.onload = function() {
-                console.log('✓ Chart.js loaded successfully from fallback CDN (unpkg)');
-            };
-            script.onerror = function() {
-                console.error('✗ CRITICAL: All CDN sources failed. Charts will not work.');
-                alert('Unable to load Chart.js library from any CDN source. Interactive charts will not be available. Please check your internet connection or try again later.');
-            };
-            document.head.appendChild(script);
-        } else {
-            console.log('✓ Chart.js loaded successfully from primary CDN (jsdelivr)');
-        }
-    </script>
+    <!-- Using custom Canvas-based charts (no external dependencies) -->
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -1324,28 +1302,173 @@
             console.log("=== DISPLAY RESULTS COMPLETE ===");
         }
 
-        // ============ INTERACTIVE CHART FUNCTIONS ============
+        // ============ CUSTOM CHART DRAWING (NO EXTERNAL DEPENDENCIES) ============
 
-        let currentChart = null; // Store current chart instance
+        function drawCustomChart(canvas, timePoints, premiumValues, optionValues, hedgePnLs, portfolioValues) {
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, width, height);
+
+            // Margins
+            const margin = {top: 40, right: 40, bottom: 60, left: 70};
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+
+            // Find min/max for scaling
+            const allValues = [...premiumValues, ...optionValues, ...hedgePnLs, ...portfolioValues];
+            const minVal = Math.min(...allValues);
+            const maxVal = Math.max(...allValues);
+            const range = maxVal - minVal;
+            const padding = range * 0.1;
+
+            const minTime = Math.min(...timePoints);
+            const maxTime = Math.max(...timePoints);
+            const timeRange = maxTime - minTime;
+
+            // Scale functions
+            const xScale = (time) => margin.left + ((time - minTime) / timeRange) * chartWidth;
+            const yScale = (val) => margin.top + chartHeight - ((val - (minVal - padding)) / (range + 2 * padding)) * chartHeight;
+
+            // Draw background
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw grid lines
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            const numYLines = 8;
+            for (let i = 0; i <= numYLines; i++) {
+                const y = margin.top + (i / numYLines) * chartHeight;
+                ctx.beginPath();
+                ctx.moveTo(margin.left, y);
+                ctx.lineTo(width - margin.right, y);
+                ctx.stroke();
+
+                // Y-axis labels
+                const val = maxVal + padding - (i / numYLines) * (range + 2 * padding);
+                ctx.fillStyle = '#666';
+                ctx.font = '11px Arial';
+                ctx.textAlign = 'right';
+                ctx.fillText(val.toFixed(0) + 'k', margin.left - 10, y + 4);
+            }
+
+            // X-axis labels
+            const numXLabels = 6;
+            for (let i = 0; i <= numXLabels; i++) {
+                const time = minTime + (i / numXLabels) * timeRange;
+                const x = xScale(time);
+                ctx.fillStyle = '#666';
+                ctx.font = '11px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(Math.round(time), x, height - margin.bottom + 20);
+            }
+
+            // Draw axes
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(margin.left, margin.top);
+            ctx.lineTo(margin.left, height - margin.bottom);
+            ctx.lineTo(width - margin.right, height - margin.bottom);
+            ctx.stroke();
+
+            // Helper function to draw line
+            function drawLine(data, color, lineWidth = 2, dashed = false, stepped = false) {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = lineWidth;
+                if (dashed) ctx.setLineDash([5, 5]);
+                else ctx.setLineDash([]);
+
+                ctx.beginPath();
+                for (let i = 0; i < timePoints.length; i++) {
+                    const x = xScale(timePoints[i]);
+                    const y = yScale(data[i]);
+
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        if (stepped) {
+                            // Step function: horizontal then vertical
+                            ctx.lineTo(x, yScale(data[i-1]));
+                            ctx.lineTo(x, y);
+                        } else {
+                            ctx.lineTo(x, y);
+                        }
+                    }
+                }
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Draw lines (back to front for proper layering)
+            drawLine(premiumValues, 'rgb(255, 99, 132)', 2, true); // Premium (dashed red)
+            drawLine(optionValues, 'rgb(54, 162, 235)', 2); // Option Value (blue)
+            drawLine(hedgePnLs, 'rgb(255, 206, 86)', 2, false, true); // Hedge P&L (yellow, stepped)
+            drawLine(portfolioValues, 'rgb(75, 192, 192)', 3); // Portfolio Value (cyan, bold)
+
+            // Add axis labels
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Time (minutes)', width / 2, height - 15);
+
+            ctx.save();
+            ctx.translate(20, height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('P&L (thousands)', 0, 0);
+            ctx.restore();
+
+            // Draw legend
+            const legends = [
+                { color: 'rgb(255, 99, 132)', text: 'Premium Paid', dashed: true, width: 2 },
+                { color: 'rgb(54, 162, 235)', text: 'Option Value', dashed: false, width: 2 },
+                { color: 'rgb(255, 206, 86)', text: 'Hedge P&L', dashed: false, width: 2 },
+                { color: 'rgb(75, 192, 192)', text: 'Total Portfolio Value', dashed: false, width: 3 }
+            ];
+
+            const legendX = margin.left + 20;
+            const legendY = margin.top + 10;
+
+            legends.forEach((legend, i) => {
+                const y = legendY + i * 22;
+
+                // Draw line sample
+                ctx.strokeStyle = legend.color;
+                ctx.lineWidth = legend.width;
+                if (legend.dashed) ctx.setLineDash([5, 5]);
+                else ctx.setLineDash([]);
+                ctx.beginPath();
+                ctx.moveTo(legendX, y);
+                ctx.lineTo(legendX + 40, y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Draw text
+                ctx.fillStyle = '#333';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(legend.text, legendX + 50, y + 4);
+            });
+        }
+
+        // ============ INTERACTIVE CHART FUNCTIONS ============
 
         function showStrikeChart(strikeIndex) {
             console.log("=== showStrikeChart called ===");
             console.log("Strike index:", strikeIndex);
-            console.log("window.strikeResultsData:", window.strikeResultsData);
-            console.log("window.chartMetadata:", window.chartMetadata);
 
             const strikeData = window.strikeResultsData[strikeIndex];
             const metadata = window.chartMetadata;
 
-            console.log("strikeData:", strikeData);
-            console.log("metadata:", metadata);
-
             if (!strikeData || !metadata) {
-                console.error("Strike data not available - strikeData:", !!strikeData, "metadata:", !!metadata);
+                console.error("Strike data not available");
                 return;
             }
 
-            console.log("Data validated, proceeding with chart generation...");
+            console.log("Data validated, proceeding with custom chart generation...");
 
             // Prepare chart data
             const timePoints = [];
@@ -1390,114 +1513,13 @@
             `;
             document.getElementById('chartStats').innerHTML = statsHTML;
 
-            // Destroy previous chart if exists
-            if (currentChart) {
-                currentChart.destroy();
-            }
+            // Get canvas and draw custom chart
+            const canvas = document.getElementById('pnlChart');
+            canvas.width = 1000;  // Set explicit dimensions for better quality
+            canvas.height = 500;
 
-            // Create new chart
-            const ctx = document.getElementById('pnlChart').getContext('2d');
-            currentChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: timePoints,
-                    datasets: [
-                        {
-                            label: 'Premium Paid',
-                            data: premiumValues,
-                            borderColor: 'rgb(255, 99, 132)',
-                            borderDash: [5, 5],
-                            borderWidth: 2,
-                            fill: false,
-                            pointRadius: 0,
-                            tension: 0
-                        },
-                        {
-                            label: 'Option Value',
-                            data: optionValues,
-                            borderColor: 'rgb(54, 162, 235)',
-                            borderWidth: 2,
-                            fill: false,
-                            pointRadius: 0,
-                            tension: 0.1
-                        },
-                        {
-                            label: 'Hedge P&L',
-                            data: hedgePnLs,
-                            borderColor: 'rgb(255, 206, 86)',
-                            borderWidth: 2,
-                            fill: false,
-                            pointRadius: 0,
-                            stepped: 'before',  // Step function
-                            tension: 0
-                        },
-                        {
-                            label: 'Total Portfolio Value',
-                            data: portfolioValues,
-                            borderColor: 'rgb(75, 192, 192)',
-                            borderWidth: 3,
-                            fill: false,
-                            pointRadius: 0,
-                            tension: 0.1
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false
-                    },
-                    scales: {
-                        x: {
-                            type: 'linear',
-                            title: {
-                                display: true,
-                                text: 'Time (minutes)',
-                                font: { size: 14, weight: 'bold' }
-                            },
-                            ticks: {
-                                callback: function(value) {
-                                    return value.toFixed(0);
-                                }
-                            }
-                        },
-                        y: {
-                            title: {
-                                display: true,
-                                text: 'P&L (thousands)',
-                                font: { size: 14, weight: 'bold' }
-                            },
-                            ticks: {
-                                callback: function(value) {
-                                    return value.toFixed(0) + 'k';
-                                }
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                usePointStyle: true,
-                                padding: 15,
-                                font: { size: 12 }
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                title: function(context) {
-                                    return 'Time: ' + context[0].parsed.x + ' minutes';
-                                },
-                                label: function(context) {
-                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + 'k';
-                                }
-                            }
-                        }
-                    }
-                }
-            });
+            // Draw the custom chart
+            drawCustomChart(canvas, timePoints, premiumValues, optionValues, hedgePnLs, portfolioValues);
 
             // Show modal
             console.log("Attempting to show modal...");
@@ -1521,9 +1543,11 @@
             if (modal) {
                 modal.style.display = 'none';
             }
-            if (currentChart) {
-                currentChart.destroy();
-                currentChart = null;
+            // Clear canvas
+            const canvas = document.getElementById('pnlChart');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
         }
 
