@@ -110,6 +110,45 @@
             background-color: #d4edda;
             font-weight: bold;
         }
+        /* New column-based summary table styles */
+        .strike-summary-container {
+            overflow-x: auto;
+            max-width: 100%;
+            margin: 20px 0;
+        }
+        .strike-summary {
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 12px;
+        }
+        .strike-summary th,
+        .strike-summary td {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        .strike-summary th {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+        .strike-summary .row-label {
+            background-color: #f5f5f5;
+            font-weight: bold;
+            text-align: left;
+            padding-left: 15px;
+        }
+        .strike-summary tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+        .summary-stats {
+            margin-top: 15px;
+            padding: 12px 15px;
+            font-size: 1.05em;
+            background-color: #f9f9f9;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+        }
         .strike-table-wrapper {
             max-height: 500px;
             overflow-y: auto;
@@ -1014,38 +1053,79 @@
             strikesInfoDiv.innerHTML += strikesHTML;
             console.log("Strikes HTML appended, div has", strikesInfoDiv.children.length, "children");
 
-            // Create summary table
+            // Create summary table - COLUMN-BASED LAYOUT (strikes as columns)
             console.log("Building summary table...");
-            let summaryHTML = '<h2>Summary - Final P&L Across All Strikes (100M Settlement Currency)</h2>';
-            summaryHTML += '<table class="summary-table"><thead><tr>';
-            summaryHTML += '<th>Strike Type</th><th>Strike Price</th><th>Base Notional</th>';
-            summaryHTML += '<th>Implied Vol</th><th>Realized Vol</th><th>Final Portfolio P&L</th></tr></thead><tbody>';
+            let summaryHTML = '<h2>Strike P&L Summary</h2>';
 
+            // Calculate statistics for summary line
             let totalPnL = 0;
+            const finalPnLs = [];
             allResults.forEach(r => {
                 const finalPnL = r.results[r.results.length - 1].portfolioValue;
+                finalPnLs.push(finalPnL);
                 totalPnL += finalPnL;
-
-                // Show custom strikes in bold
-                const nameStyle = r.isCustom ? '<strong>' : '';
-                const nameStyleEnd = r.isCustom ? '</strong>' : '';
-                const strikeStyle = r.isCustom ? '<strong>' : '';
-                const strikeStyleEnd = r.isCustom ? '</strong>' : '';
-                const notionalStyle = r.isCustom ? '<strong>' : '';
-                const notionalStyleEnd = r.isCustom ? '</strong>' : '';
-                const pnlStyle = r.isCustom ? '<strong>' : '';
-                const pnlStyleEnd = r.isCustom ? '</strong>' : '';
-
-                // Get color for P&L
-                const pnlColors = getPnLColor(finalPnL);
-
-                summaryHTML += `<tr><td>${nameStyle}${r.name}${nameStyleEnd}</td><td>${strikeStyle}${formatNumber(r.strike)}${strikeStyleEnd}</td><td>${notionalStyle}${formatMillion(r.baseNotional)} EUR${notionalStyleEnd}</td>`;
-                summaryHTML += `<td>${impliedVolPercent.toFixed(2)}%</td><td>${realizedVolPercent.toFixed(2)}%</td>`;
-                summaryHTML += `<td style="background-color: ${pnlColors.bg}; color: ${pnlColors.text}; font-weight: bold;">${pnlStyle}${formatThousand(finalPnL)}${pnlStyleEnd}</td></tr>`;
             });
+            const averagePnL = totalPnL / allResults.length;
+            const volDifference = realizedVolPercent - impliedVolPercent;
+            const volDifferenceSign = volDifference >= 0 ? '+' : '';
 
-            summaryHTML += `<tr><td colspan="5"><strong>TOTAL</strong></td><td><strong>${formatThousand(totalPnL)}</strong></td></tr>`;
+            // Build transposed table - strikes as columns
+            summaryHTML += '<div class="strike-summary-container">';
+            summaryHTML += '<table class="strike-summary"><thead><tr>';
+            summaryHTML += '<th></th>'; // Empty corner cell
+
+            // Header row: strike prices
+            allResults.forEach(r => {
+                summaryHTML += `<th>${formatNumber(r.strike)}</th>`;
+            });
+            summaryHTML += '</tr></thead><tbody>';
+
+            // Row 1: Strike Type
+            summaryHTML += '<tr><td class="row-label"><strong>Strike Type</strong></td>';
+            allResults.forEach(r => {
+                const label = r.isCustom ? `<strong>${r.name}</strong>` : r.name;
+                summaryHTML += `<td>${label}</td>`;
+            });
+            summaryHTML += '</tr>';
+
+            // Row 2: Option Type
+            summaryHTML += '<tr><td class="row-label"><strong>Option Type</strong></td>';
+            allResults.forEach(r => {
+                const optionType = r.type.charAt(0).toUpperCase() + r.type.slice(1);
+                const typeText = r.isCustom ? `<strong>${optionType}</strong>` : optionType;
+                summaryHTML += `<td>${typeText}</td>`;
+            });
+            summaryHTML += '</tr>';
+
+            // Row 3: Strike Price
+            summaryHTML += '<tr><td class="row-label"><strong>Strike Price</strong></td>';
+            allResults.forEach(r => {
+                const strikeText = r.isCustom ? `<strong>${formatNumber(r.strike)}</strong>` : formatNumber(r.strike);
+                summaryHTML += `<td>${strikeText}</td>`;
+            });
+            summaryHTML += '</tr>';
+
+            // Row 4: Final P&L (with color coding)
+            summaryHTML += '<tr><td class="row-label"><strong>Final P&L (k)</strong></td>';
+            allResults.forEach((r, idx) => {
+                const finalPnL = finalPnLs[idx];
+                const pnlColors = getPnLColor(finalPnL);
+                const pnlText = r.isCustom ? `<strong>${formatThousand(finalPnL)}</strong>` : formatThousand(finalPnL);
+                summaryHTML += `<td style="background-color: ${pnlColors.bg}; color: ${pnlColors.text}; font-weight: bold;">${pnlText}</td>`;
+            });
+            summaryHTML += '</tr>';
+
             summaryHTML += '</tbody></table>';
+            summaryHTML += '</div>'; // Close strike-summary-container
+
+            // Add summary statistics line
+            summaryHTML += '<div class="summary-stats">';
+            summaryHTML += '<strong>Summary:</strong> ';
+            summaryHTML += `Average P&L: ${formatThousand(averagePnL)} | `;
+            summaryHTML += `Implied Vol: ${impliedVolPercent.toFixed(2)}% | `;
+            summaryHTML += `Realized Vol: ${realizedVolPercent.toFixed(2)}% | `;
+            summaryHTML += `Vol Diff: ${volDifferenceSign}${volDifference.toFixed(2)}pp`;
+            summaryHTML += '</div>';
 
             console.log("Summary HTML length:", summaryHTML.length);
             summaryDiv.innerHTML = summaryHTML;
