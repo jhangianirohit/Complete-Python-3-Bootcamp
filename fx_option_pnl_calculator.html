@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FX Option P&L Calculator - 10-Minute Intervals</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -228,6 +229,87 @@
         }
         .custom-strike-type.hidden {
             visibility: hidden;
+        }
+        /* Modal for P&L charts */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.6);
+            overflow: auto;
+        }
+        .modal-content {
+            background-color: white;
+            margin: 3% auto;
+            padding: 30px;
+            border-radius: 8px;
+            width: 85%;
+            max-width: 1200px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .modal-header h2 {
+            margin: 0;
+            color: #333;
+        }
+        .close {
+            color: #aaa;
+            font-size: 32px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        .close:hover,
+        .close:focus {
+            color: #000;
+        }
+        .chart-container {
+            position: relative;
+            height: 500px;
+            margin-bottom: 20px;
+        }
+        .chart-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+        .chart-stats p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        /* Make strike columns clickable */
+        .strike-summary tbody td:not(.row-label) {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .strike-summary tbody td:not(.row-label):hover {
+            opacity: 0.8;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .strike-summary th {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .strike-summary th:first-child {
+            cursor: default;
+        }
+        .strike-summary th:not(:first-child):hover {
+            background-color: #0056b3;
         }
     </style>
 </head>
@@ -1068,20 +1150,30 @@
             const averagePnL = totalPnL / allResults.length;
             // volDifference and volDifferenceSign already calculated above (lines 1023-1024)
 
+            // Store allResults globally for chart access
+            window.strikeResultsData = allResults;
+            window.chartMetadata = {
+                spots: spots,
+                impliedVolPercent: impliedVolPercent,
+                baseFreq: baseFreq,
+                hedgeFreq: hedgeFreq,
+                totalMinutes: totalMinutes
+            };
+
             // Build transposed table - strikes as columns
             summaryHTML += '<div class="strike-summary-container">';
             summaryHTML += '<table class="strike-summary"><thead><tr>';
             summaryHTML += '<th></th>'; // Empty corner cell
 
-            // Header row: strike prices
-            allResults.forEach(r => {
-                summaryHTML += `<th>${formatNumber(r.strike)}</th>`;
+            // Header row: strike prices (clickable)
+            allResults.forEach((r, idx) => {
+                summaryHTML += `<th onclick="showStrikeChart(${idx})" title="Click to view P&L chart">${formatNumber(r.strike)}</th>`;
             });
             summaryHTML += '</tr></thead><tbody>';
 
-            // Row 1: Strike (standardized delta labels)
+            // Row 1: Strike (standardized delta labels) - clickable
             summaryHTML += '<tr><td class="row-label"><strong>Strike</strong></td>';
-            allResults.forEach(r => {
+            allResults.forEach((r, idx) => {
                 // Get initial delta from first time point
                 const initialDelta = r.results[0].delta;
 
@@ -1094,16 +1186,16 @@
                 // Create standardized label: "[Delta]Δ [Put/Call]"
                 const strikeLabel = `${deltaInt}Δ ${optionTypeLabel}`;
 
-                summaryHTML += `<td>${strikeLabel}</td>`;
+                summaryHTML += `<td onclick="showStrikeChart(${idx})" title="Click to view P&L chart">${strikeLabel}</td>`;
             });
             summaryHTML += '</tr>';
 
-            // Row 2: Final P&L (with color coding)
+            // Row 2: Final P&L (with color coding) - clickable
             summaryHTML += '<tr><td class="row-label"><strong>Final P&L (k)</strong></td>';
             allResults.forEach((r, idx) => {
                 const finalPnL = finalPnLs[idx];
                 const pnlColors = getPnLColor(finalPnL);
-                summaryHTML += `<td style="background-color: ${pnlColors.bg}; color: ${pnlColors.text}; font-weight: bold;">${formatThousand(finalPnL)}</td>`;
+                summaryHTML += `<td onclick="showStrikeChart(${idx})" title="Click to view P&L chart" style="background-color: ${pnlColors.bg}; color: ${pnlColors.text}; font-weight: bold;">${formatThousand(finalPnL)}</td>`;
             });
             summaryHTML += '</tr>';
 
@@ -1180,7 +1272,209 @@
             console.log("=== DISPLAY RESULTS COMPLETE ===");
         }
 
+        // ============ INTERACTIVE CHART FUNCTIONS ============
+
+        let currentChart = null; // Store current chart instance
+
+        function showStrikeChart(strikeIndex) {
+            const strikeData = window.strikeResultsData[strikeIndex];
+            const metadata = window.chartMetadata;
+
+            if (!strikeData || !metadata) {
+                console.error("Strike data not available");
+                return;
+            }
+
+            // Prepare chart data
+            const timePoints = [];
+            const premiumValues = [];
+            const optionValues = [];
+            const hedgePnLs = [];
+            const portfolioValues = [];
+
+            // Extract data from results
+            strikeData.results.forEach(point => {
+                timePoints.push(point.time);
+                premiumValues.push(point.premium / 1000); // Convert to thousands
+                optionValues.push(point.optionValue / 1000);
+                hedgePnLs.push(point.hedgePnL / 1000);
+                portfolioValues.push(point.portfolioValue / 1000);
+            });
+
+            // Calculate statistics
+            const initialPortfolio = portfolioValues[0];
+            const finalPortfolio = portfolioValues[portfolioValues.length - 1];
+            const maxPortfolio = Math.max(...portfolioValues);
+            const minPortfolio = Math.min(...portfolioValues);
+            const maxTime = timePoints[portfolioValues.indexOf(maxPortfolio)];
+            const minTime = timePoints[portfolioValues.indexOf(minPortfolio)];
+
+            // Get strike label
+            const initialDelta = strikeData.results[0].delta;
+            const deltaInt = Math.round(Math.abs(initialDelta) * 100);
+            const optionTypeLabel = strikeData.type.charAt(0).toUpperCase() + strikeData.type.slice(1);
+            const strikeLabel = `${deltaInt}Δ ${optionTypeLabel}`;
+
+            // Update modal title
+            document.getElementById('chartTitle').textContent =
+                `P&L Path - ${strikeLabel} (Strike: ${formatNumber(strikeData.strike)})`;
+
+            // Update statistics
+            const statsHTML = `
+                <p><strong>Initial Portfolio Value:</strong> ${formatThousand(initialPortfolio * 1000)}</p>
+                <p><strong>Final Portfolio Value:</strong> ${formatThousand(finalPortfolio * 1000)}</p>
+                <p><strong>Max Portfolio Value:</strong> ${formatThousand(maxPortfolio * 1000)} (at t=${maxTime} min)</p>
+                <p><strong>Min Portfolio Value:</strong> ${formatThousand(minPortfolio * 1000)} (at t=${minTime} min)</p>
+            `;
+            document.getElementById('chartStats').innerHTML = statsHTML;
+
+            // Destroy previous chart if exists
+            if (currentChart) {
+                currentChart.destroy();
+            }
+
+            // Create new chart
+            const ctx = document.getElementById('pnlChart').getContext('2d');
+            currentChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timePoints,
+                    datasets: [
+                        {
+                            label: 'Premium Paid',
+                            data: premiumValues,
+                            borderColor: 'rgb(255, 99, 132)',
+                            borderDash: [5, 5],
+                            borderWidth: 2,
+                            fill: false,
+                            pointRadius: 0,
+                            tension: 0
+                        },
+                        {
+                            label: 'Option Value',
+                            data: optionValues,
+                            borderColor: 'rgb(54, 162, 235)',
+                            borderWidth: 2,
+                            fill: false,
+                            pointRadius: 0,
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Hedge P&L',
+                            data: hedgePnLs,
+                            borderColor: 'rgb(255, 206, 86)',
+                            borderWidth: 2,
+                            fill: false,
+                            pointRadius: 0,
+                            stepped: 'before',  // Step function
+                            tension: 0
+                        },
+                        {
+                            label: 'Total Portfolio Value',
+                            data: portfolioValues,
+                            borderColor: 'rgb(75, 192, 192)',
+                            borderWidth: 3,
+                            fill: false,
+                            pointRadius: 0,
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Time (minutes)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(0);
+                                }
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'P&L (thousands)',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toFixed(0) + 'k';
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15,
+                                font: { size: 12 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return 'Time: ' + context[0].parsed.x + ' minutes';
+                                },
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + 'k';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Show modal
+            document.getElementById('chartModal').style.display = 'block';
+        }
+
+        function closeChartModal() {
+            document.getElementById('chartModal').style.display = 'none';
+            if (currentChart) {
+                currentChart.destroy();
+                currentChart = null;
+            }
+        }
+
+        // Close modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('chartModal');
+            if (event.target === modal) {
+                closeChartModal();
+            }
+        }
+
         // No auto-calculate on load - wait for user input
     </script>
+
+    <!-- Modal for P&L Chart -->
+    <div id="chartModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="chartTitle">P&L Path</h2>
+                <span class="close" onclick="closeChartModal()">&times;</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="pnlChart"></canvas>
+            </div>
+            <div class="chart-stats" id="chartStats">
+                <!-- Stats will be populated dynamically -->
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
