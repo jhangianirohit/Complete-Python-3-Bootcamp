@@ -1566,13 +1566,24 @@
             `;
             document.getElementById('chartStats').innerHTML = statsHTML;
 
+            // Prepare spot data (ALL time points at base frequency)
+            const allSpotTimes = [];
+            const allSpotPrices = [];
+            const spots = metadata.spots;
+            const baseFreq = metadata.baseFreq;
+
+            for (let i = 0; i < spots.length; i++) {
+                allSpotTimes.push(i * baseFreq);
+                allSpotPrices.push(spots[i]);
+            }
+
             // Get canvas and draw custom chart
             const canvas = document.getElementById('pnlChart');
             canvas.width = 1000;  // Set explicit dimensions for better quality
             canvas.height = 500;
 
-            // Draw the custom chart
-            drawCustomChart(canvas, timePoints, premiumValues, optionValues, hedgePnLs, portfolioValues);
+            // Draw the custom chart with spot data
+            drawCustomChart(canvas, timePoints, premiumValues, optionValues, hedgePnLs, portfolioValues, allSpotTimes, allSpotPrices);
 
             // Show modal
             console.log("Attempting to show modal...");
