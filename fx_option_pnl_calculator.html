@@ -4,8 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FX Option P&L Calculator - 10-Minute Intervals</title>
-    <!-- Chart.js library for interactive charts - MUST load before other scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <!-- Chart.js library - Primary CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Fallback verification and loading -->
+    <script>
+        // Verify Chart.js loaded successfully
+        if (typeof Chart === 'undefined') {
+            console.error('CRITICAL: Chart.js failed to load from primary CDN!');
+            console.error('Attempting fallback CDN...');
+            // Try alternate CDN (unpkg)
+            var script = document.createElement('script');
+            script.src = 'https://unpkg.com/chart.js@4.4.1/dist/chart.umd.min.js';
+            script.onload = function() {
+                console.log('✓ Chart.js loaded successfully from fallback CDN (unpkg)');
+            };
+            script.onerror = function() {
+                console.error('✗ CRITICAL: All CDN sources failed. Charts will not work.');
+                alert('Unable to load Chart.js library from any CDN source. Interactive charts will not be available. Please check your internet connection or try again later.');
+            };
+            document.head.appendChild(script);
+        } else {
+            console.log('✓ Chart.js loaded successfully from primary CDN (jsdelivr)');
+        }
+    </script>
     <style>
         body {
             font-family: Arial, sans-serif;
