@@ -361,6 +361,30 @@
         </div>
 
         <div class="input-section">
+            <div class="input-group">
+                <label>Option Expiry:</label>
+                <div style="margin-top: 5px;">
+                    <label style="font-weight: normal; display: block; margin-bottom: 5px;">
+                        <input type="radio" name="expiryMode" value="atEnd" checked onchange="toggleExpiryMode()">
+                        At end of spot series (standard)
+                    </label>
+                    <label style="font-weight: normal; display: block;">
+                        <input type="radio" name="expiryMode" value="custom" onchange="toggleExpiryMode()">
+                        Custom: <input type="number" id="customExpiryHours" value="48" min="0.1" step="0.1" style="width: 80px; margin-left: 5px;" disabled> hours
+                    </label>
+                </div>
+            </div>
+            <div class="input-group" id="expiryCalculations" style="display: none; margin-top: 10px; padding: 10px; background-color: #f0f8ff; border-left: 3px solid #007bff; border-radius: 4px;">
+                <div style="font-size: 14px; color: #555;">
+                    <strong>Calculated:</strong><br>
+                    <span id="spotSeriesLengthDisplay" style="margin-left: 10px;">• Spot Series Length: -- hours</span><br>
+                    <span id="timeRemainingDisplay" style="margin-left: 10px;">• Time Remaining at End: -- hours</span><br>
+                    <span id="expiryWarning" style="margin-left: 10px; color: #ff6600; font-weight: bold;"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-section">
             <div class="input-group input-group-full">
                 <label>Spot Price Series (one per line, interval matches Base Data Frequency):</label>
                 <textarea id="spotSeries" rows="10" placeholder="Paste spot prices here, one per line (minimum 2 values)..."></textarea>
@@ -615,6 +639,33 @@
             addBtn.disabled = count >= MAX_CUSTOM_STRIKES;
         }
 
+        // ============ OPTION EXPIRY TOGGLE ============
+
+        function toggleExpiryMode() {
+            const customRadio = document.querySelector('input[name="expiryMode"][value="custom"]');
+            const customInput = document.getElementById('customExpiryHours');
+            const calculationsDiv = document.getElementById('expiryCalculations');
+
+            if (customRadio.checked) {
+                customInput.disabled = false;
+                calculationsDiv.style.display = 'block';
+                updateExpiryCalculations();
+            } else {
+                customInput.disabled = true;
+                calculationsDiv.style.display = 'none';
+            }
+        }
+
+        function updateExpiryCalculations() {
+            // This will be called during calculate() to show spot series length
+            // and time remaining. Placeholder for now.
+            const customExpiryHours = parseFloat(document.getElementById('customExpiryHours').value);
+            if (!isNaN(customExpiryHours)) {
+                document.getElementById('spotSeriesLengthDisplay').textContent = '• Spot Series Length: (will calculate when you click Calculate)';
+                document.getElementById('timeRemainingDisplay').textContent = '• Time Remaining at End: (will calculate when you click Calculate)';
+            }
+        }
+
         function parseCustomStrikes(initialSpot, sigma, timeYears) {
             const container = document.getElementById('customStrikesContainer');
             const customStrikes = [];
@@ -804,7 +855,7 @@
             return realizedVol; // Returns decimal (e.g., 0.3507 for 35.07%)
         }
 
-        function calculateStrikePnL(spots, strike, sigma, optionType, baseNotional, totalMinutes, hedgeTimes, baseFreq) {
+        function calculateStrikePnL(spots, strike, sigma, optionType, baseNotional, totalMinutes, hedgeTimes, baseFreq, optionTenorMinutes) {
             let results = [];
             let cumulativeHedge = 0;
             let weightedSumHedge = 0;
@@ -815,9 +866,8 @@
             let lastCumulativeHedge = 0; // Track last cumulative hedge position
             let lastAvgSpot = 0; // Track last weighted avg spot
 
-            // Calculate premium at t=0
-            const totalDays = totalMinutes / (24 * 60);
-            const T0 = totalDays / 365; // Initial time to expiry in years
+            // Calculate premium at t=0 using OPTION TENOR
+            const T0 = optionTenorMinutes / (365 * 24 * 60); // Initial time to expiry in years
             const premium = optionType === 'call'
                 ? blackScholesCall(spots[0], strike, T0, sigma)
                 : blackScholesPut(spots[0], strike, T0, sigma);
@@ -829,8 +879,14 @@
                 const spotIndex = hedgeTime / baseFreq;
                 const spot = spots[spotIndex];
 
-                // Time remaining in years
-                const minutesRemaining = totalMinutes - hedgeTime;
+                // Time remaining in years (based on OPTION EXPIRY, not spot series length)
+                const minutesRemaining = optionTenorMinutes - hedgeTime;
+
+                // If option has expired, stop calculations
+                if (minutesRemaining < 0) {
+                    break;
+                }
+
                 const T = minutesRemaining / (365 * 24 * 60);
 
                 // Calculate option value and delta
@@ -910,12 +966,23 @@
                 previousDelta = delta;
             }
 
-            // Check if final time is not a hedge time
+            // Check if we need to add a final row
             const lastHedgeTime = hedgeTimes[hedgeTimes.length - 1];
-            if (lastHedgeTime < totalMinutes) {
-                // Add final row with mark-to-market at current spot
-                const finalSpot = spots[spots.length - 1];
-                const T = 0; // At expiry
+            const optionExpiryTime = optionTenorMinutes;
+
+            // Determine the effective final time (min of spot series end and option expiry)
+            const effectiveFinalTime = Math.min(totalMinutes, optionExpiryTime);
+
+            if (lastHedgeTime < effectiveFinalTime) {
+                // Add final row with mark-to-market
+                // Use spot at effective final time (which might be before end of series if option expires early)
+                const finalSpotIndex = Math.floor(effectiveFinalTime / baseFreq);
+                const finalSpot = spots[finalSpotIndex];
+
+                // Calculate time remaining at effective final time
+                const minutesRemainingAtFinal = optionExpiryTime - effectiveFinalTime;
+                const T = Math.max(0, minutesRemainingAtFinal / (365 * 24 * 60));
+
                 const optionValue = optionType === 'call'
                     ? blackScholesCall(finalSpot, strike, T, sigma)
                     : blackScholesPut(finalSpot, strike, T, sigma);
@@ -932,7 +999,7 @@
                 const portfolioValue = premiumPaid + (optionValue * baseNotional) + hedgePnL;
 
                 results.push({
-                    time: totalMinutes,
+                    time: effectiveFinalTime,
                     spot: finalSpot,
                     delta: null, // No delta calculation at non-hedge time
                     incrementalHedge: null,
@@ -983,12 +1050,55 @@
             const totalMinutes = numIntervals * baseFreq;
             const totalHours = totalMinutes / 60;
             const totalDays = totalHours / 24;
-            const timeYears = totalDays / 365;
+            const spotSeriesTimeYears = totalDays / 365;
 
-            console.log("Time period:", totalMinutes, "minutes =", totalHours, "hours =", totalDays, "days");
+            console.log("Spot series time period:", totalMinutes, "minutes =", totalHours, "hours =", totalDays, "days");
 
-            // Calculate hedge times
-            const hedgeTimes = calculateHedgeTimes(totalMinutes, hedgeFreq);
+            // Get option expiry settings
+            const expiryMode = document.querySelector('input[name="expiryMode"]:checked').value;
+            let optionTenorHours, optionTenorYears, optionTenorMinutes, lastCalculationMinutes;
+
+            if (expiryMode === 'custom') {
+                optionTenorHours = parseFloat(document.getElementById('customExpiryHours').value);
+                if (isNaN(optionTenorHours) || optionTenorHours <= 0) {
+                    showValidationMessage('Error: Option expiry must be a positive number', 'error');
+                    return;
+                }
+                optionTenorMinutes = optionTenorHours * 60;
+                optionTenorYears = optionTenorHours / (365 * 24);
+
+                // Update display
+                lastCalculationMinutes = Math.min(totalMinutes, optionTenorMinutes);
+                const timeRemainingHours = (optionTenorMinutes - totalMinutes) / 60;
+
+                document.getElementById('spotSeriesLengthDisplay').textContent = `• Spot Series Length: ${totalHours.toFixed(1)} hours`;
+                if (timeRemainingHours > 0) {
+                    document.getElementById('timeRemainingDisplay').textContent = `• Time Remaining at End: ${timeRemainingHours.toFixed(1)} hours`;
+                    document.getElementById('expiryWarning').textContent = `⚠️ Analysis ends with ${timeRemainingHours.toFixed(1)}h remaining. Option has not expired.`;
+                    document.getElementById('expiryWarning').style.color = '#ff6600';
+                } else if (timeRemainingHours < 0) {
+                    const expiryTime = optionTenorMinutes;
+                    document.getElementById('timeRemainingDisplay').textContent = `• Time Remaining at End: 0 hours (expires at ${(expiryTime / 60).toFixed(1)}h)`;
+                    document.getElementById('expiryWarning').textContent = `⚠️ Option expires at ${(expiryTime / 60).toFixed(1)}h. Analysis stops at expiry.`;
+                    document.getElementById('expiryWarning').style.color = '#ff0000';
+                } else {
+                    document.getElementById('timeRemainingDisplay').textContent = `• Time Remaining at End: 0 hours (expires at end)`;
+                    document.getElementById('expiryWarning').textContent = '';
+                }
+
+                console.log("Option tenor:", optionTenorHours, "hours =", optionTenorYears, "years");
+                console.log("Last calculation time:", lastCalculationMinutes, "minutes");
+            } else {
+                // Standard mode: option expires at end of spot series
+                optionTenorHours = totalHours;
+                optionTenorMinutes = totalMinutes;
+                optionTenorYears = spotSeriesTimeYears;
+                lastCalculationMinutes = totalMinutes;
+                console.log("Standard mode: option expires at end of spot series");
+            }
+
+            // Calculate hedge times (up to lastCalculationMinutes)
+            const hedgeTimes = calculateHedgeTimes(lastCalculationMinutes, hedgeFreq);
             console.log("Hedge times:", hedgeTimes.length, "points -", hedgeTimes);
 
             showValidationMessage(
@@ -1008,8 +1118,8 @@
 
             // Calculate strikes at inception
             const S0 = spots[0];
-            const T0 = timeYears; // Time to expiry in years
-            console.log("Initial spot (S0):", S0, "Time to expiry (T0):", T0, "years");
+            const T0 = optionTenorYears; // Use OPTION TENOR for strike calculation, not spot series length
+            console.log("Initial spot (S0):", S0, "Option tenor (T0):", T0, "years");
 
             console.log("Calculating standard strikes...");
             const standardStrikes = [
@@ -1050,7 +1160,7 @@
                     type: s.type,
                     baseNotional: baseNotional,
                     isCustom: s.isCustom || false,
-                    results: calculateStrikePnL(spots, s.strike, sigma, s.type, baseNotional, totalMinutes, hedgeTimes, baseFreq)
+                    results: calculateStrikePnL(spots, s.strike, sigma, s.type, baseNotional, totalMinutes, hedgeTimes, baseFreq, optionTenorMinutes)
                 };
                 console.log(`  Calculated ${result.results.length} time points`);
                 return result;
@@ -1064,7 +1174,7 @@
 
             console.log("Calling displayResults...");
             try {
-                displayResults(allResults, strikes, spots, volPercent, realizedVolPercent, totalHours, totalDays, numPoints, baseFreq, hedgeFreq, hedgeTimes.length);
+                displayResults(allResults, strikes, spots, volPercent, realizedVolPercent, totalHours, totalDays, numPoints, baseFreq, hedgeFreq, hedgeTimes.length, optionTenorHours, expiryMode);
             } catch (error) {
                 console.error("ERROR in displayResults:", error);
                 console.error("Stack trace:", error.stack);
@@ -1072,7 +1182,7 @@
             console.log("=== CALCULATION END ===");
         }
 
-        function displayResults(allResults, strikes, spots, impliedVolPercent, realizedVolPercent, totalHours, totalDays, numPoints, baseFreq, hedgeFreq, numHedgePoints) {
+        function displayResults(allResults, strikes, spots, impliedVolPercent, realizedVolPercent, totalHours, totalDays, numPoints, baseFreq, hedgeFreq, numHedgePoints, optionTenorHours, expiryMode) {
             console.log("=== DISPLAY RESULTS START ===");
             console.log("allResults:", allResults.length, "strikes");
 
@@ -1111,6 +1221,22 @@
             analysisHTML += `• Data Points: ${numPoints}<br>`;
             analysisHTML += `• Base Data Frequency: ${baseFreq} minutes<br>`;
             analysisHTML += `• Total Time Period: ${totalMinutes} minutes (${totalHours.toFixed(1)} hours)<br>`;
+
+            // Add option expiry information
+            if (expiryMode === 'custom') {
+                analysisHTML += `• <strong>Option Tenor: ${optionTenorHours.toFixed(1)} hours</strong> (custom expiry)<br>`;
+                const timeRemainingHours = optionTenorHours - totalHours;
+                if (timeRemainingHours > 0) {
+                    analysisHTML += `• Time Remaining at End: ${timeRemainingHours.toFixed(1)} hours (long-dated option)<br>`;
+                } else if (timeRemainingHours < 0) {
+                    analysisHTML += `• Time Remaining at End: 0 hours - <strong>Option expires at ${optionTenorHours.toFixed(1)}h</strong> (short-dated option)<br>`;
+                } else {
+                    analysisHTML += `• Time Remaining at End: 0 hours (expires at end)<br>`;
+                }
+            } else {
+                analysisHTML += `• Option Tenor: ${optionTenorHours.toFixed(1)} hours (expires at end of spot series)<br>`;
+            }
+
             analysisHTML += `• Hedging Frequency: ${hedgeFreq} minutes<br>`;
             analysisHTML += `• Number of Hedges: ${numHedgePoints}<br>`;
             analysisHTML += `• Spot Range: ${formatNumber(initialSpot)} → ${formatNumber(finalSpot)}<br>`;
@@ -1156,7 +1282,9 @@
                 impliedVolPercent: impliedVolPercent,
                 baseFreq: baseFreq,
                 hedgeFreq: hedgeFreq,
-                totalMinutes: totalMinutes
+                totalMinutes: totalMinutes,
+                optionTenorHours: optionTenorHours,
+                expiryMode: expiryMode
             };
 
             // Build transposed table - strikes as columns
@@ -1553,9 +1681,16 @@
             const optionTypeLabel = strikeData.type.charAt(0).toUpperCase() + strikeData.type.slice(1);
             const strikeLabel = `${deltaInt}Δ ${optionTypeLabel}`;
 
+            // Build chart title with option tenor info
+            let chartTitle = `P&L Path - ${strikeLabel} (Strike: ${formatNumber(strikeData.strike)})`;
+            if (metadata.expiryMode === 'custom') {
+                chartTitle += ` - ${metadata.optionTenorHours.toFixed(1)}h Option`;
+            } else {
+                chartTitle += ` - ${metadata.optionTenorHours.toFixed(1)}h Option (expires at end)`;
+            }
+
             // Update modal title
-            document.getElementById('chartTitle').textContent =
-                `P&L Path - ${strikeLabel} (Strike: ${formatNumber(strikeData.strike)})`;
+            document.getElementById('chartTitle').textContent = chartTitle;
 
             // Update statistics
             const statsHTML = `
