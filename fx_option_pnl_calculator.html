@@ -160,7 +160,7 @@
         }
         .custom-strike-row {
             display: grid;
-            grid-template-columns: 120px 140px 100px auto 80px;
+            grid-template-columns: 120px 140px 100px 80px;
             gap: 10px;
             align-items: center;
             margin-bottom: 10px;
@@ -177,10 +177,18 @@
             padding: 6px 12px;
             font-size: 14px;
             margin: 0;
+            width: 80px;
         }
         .custom-strike-label {
             font-weight: bold;
             color: #555;
+        }
+        /* Reserve space for Call/Put dropdown - make it invisible but maintain layout */
+        .custom-strike-type {
+            visibility: visible;
+        }
+        .custom-strike-type.hidden {
+            visibility: hidden;
         }
     </style>
 </head>
@@ -411,6 +419,20 @@
             return value.toFixed(decimals);
         }
 
+        // ============ P&L COLOR CODING ============
+
+        function getPnLColor(pnl) {
+            // Convert from base to thousands for threshold comparison
+            const pnlK = pnl / 1000;
+
+            if (pnlK >= 200) return { bg: '#006400', text: 'white' };      // Dark green
+            if (pnlK >= 100) return { bg: '#90EE90', text: 'black' };      // Light green
+            if (pnlK >= 0) return { bg: '#FFFFE0', text: 'black' };        // Light yellow
+            if (pnlK >= -100) return { bg: '#FFB6C1', text: 'black' };     // Light red
+            if (pnlK >= -200) return { bg: '#FF6B6B', text: 'white' };     // Medium red
+            return { bg: '#8B0000', text: 'white' };                       // Dark red
+        }
+
         // ============ CUSTOM STRIKES MANAGEMENT ============
 
         function addCustomStrike() {
@@ -433,11 +455,10 @@
                     <option value="strike">Strike Price</option>
                     <option value="delta">Delta</option>
                 </select>
-                <select class="custom-strike-type" style="display: none;">
+                <select class="custom-strike-type hidden">
                     <option value="call">Call</option>
                     <option value="put">Put</option>
                 </select>
-                <span class="custom-strike-label"></span>
                 <button class="secondary" onclick="removeCustomStrike('${rowId}')">Remove</button>
             `;
 
@@ -459,9 +480,9 @@
             const typeDropdown = row.querySelector('.custom-strike-type');
 
             if (mode === 'delta') {
-                typeDropdown.style.display = 'block';
+                typeDropdown.classList.remove('hidden');
             } else {
-                typeDropdown.style.display = 'none';
+                typeDropdown.classList.add('hidden');
             }
         }
 
@@ -916,6 +937,11 @@
             });
             console.log("P&L calculations complete for all strikes");
 
+            // Sort all results by strike price (ascending) for better display organization
+            console.log("Sorting results by strike price...");
+            allResults.sort((a, b) => a.strike - b.strike);
+            console.log("Results sorted:", allResults.map(r => `${r.name}: ${r.strike.toFixed(4)}`).join(', '));
+
             console.log("Calling displayResults...");
             try {
                 displayResults(allResults, strikes, spots, volPercent, realizedVolPercent, totalHours, totalDays, numPoints, baseFreq, hedgeFreq, hedgeTimes.length);
@@ -999,6 +1025,7 @@
             allResults.forEach(r => {
                 const finalPnL = r.results[r.results.length - 1].portfolioValue;
                 totalPnL += finalPnL;
+
                 // Show custom strikes in bold
                 const nameStyle = r.isCustom ? '<strong>' : '';
                 const nameStyleEnd = r.isCustom ? '</strong>' : '';
@@ -1009,9 +1036,12 @@
                 const pnlStyle = r.isCustom ? '<strong>' : '';
                 const pnlStyleEnd = r.isCustom ? '</strong>' : '';
 
+                // Get color for P&L
+                const pnlColors = getPnLColor(finalPnL);
+
                 summaryHTML += `<tr><td>${nameStyle}${r.name}${nameStyleEnd}</td><td>${strikeStyle}${formatNumber(r.strike)}${strikeStyleEnd}</td><td>${notionalStyle}${formatMillion(r.baseNotional)} EUR${notionalStyleEnd}</td>`;
                 summaryHTML += `<td>${impliedVolPercent.toFixed(2)}%</td><td>${realizedVolPercent.toFixed(2)}%</td>`;
-                summaryHTML += `<td>${pnlStyle}${formatThousand(finalPnL)}${pnlStyleEnd}</td></tr>`;
+                summaryHTML += `<td style="background-color: ${pnlColors.bg}; color: ${pnlColors.text}; font-weight: bold;">${pnlStyle}${formatThousand(finalPnL)}${pnlStyleEnd}</td></tr>`;
             });
 
             summaryHTML += `<tr><td colspan="5"><strong>TOTAL</strong></td><td><strong>${formatThousand(totalPnL)}</strong></td></tr>`;
