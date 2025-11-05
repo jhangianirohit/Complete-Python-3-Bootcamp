@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FX Option P&L Calculator - 10-Minute Intervals</title>
+    <title>FX Option P&L Calculator</title>
+    <!-- SheetJS library for Excel parsing -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <!-- Using custom Canvas-based charts (no external dependencies) -->
     <style>
         body {
@@ -310,12 +312,133 @@
         .row-label {
             cursor: default !important;
         }
+        /* Tab navigation styles */
+        .tab-navigation {
+            display: flex;
+            border-bottom: 2px solid #007bff;
+            margin-bottom: 20px;
+            gap: 5px;
+        }
+        .tab-button {
+            background-color: #f5f5f5;
+            color: #333;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s;
+            margin: 0;
+        }
+        .tab-button:hover {
+            background-color: #e0e0e0;
+        }
+        .tab-button.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        /* Batch analysis specific styles */
+        .upload-section {
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .pair-selection-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        .pair-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .progress-container {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            display: none;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background-color: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #007bff;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        .ranking-table {
+            margin: 20px 0;
+        }
+        .currency-group-section {
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        .expandable-pair {
+            margin: 15px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .pair-header {
+            padding: 15px;
+            background-color: #f5f5f5;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.3s;
+        }
+        .pair-header:hover {
+            background-color: #e8e8e8;
+        }
+        .pair-details {
+            padding: 20px;
+            display: none;
+            background-color: white;
+        }
+        .pair-details.expanded {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>FX Option P&L Calculator - 10-Minute Intervals</h1>
+        <h1>FX Option P&L Calculator</h1>
 
+        <!-- Tab Navigation -->
+        <div class="tab-navigation">
+            <button class="tab-button active" onclick="switchTab('single-pair')">Single Pair Analysis</button>
+            <button class="tab-button" onclick="switchTab('batch')">Batch Analysis</button>
+        </div>
+
+        <!-- Single Pair Analysis Tab -->
+        <div id="single-pair-tab" class="tab-content active">
         <div class="info-box">
             <strong>Configuration:</strong> EURUSD Options (5 strikes), Notional: 100M Settlement Currency (USD) per strike
             <br><strong>Note:</strong> Base currency (EUR) notional varies by strike: Base Notional = 100M / Strike
@@ -416,6 +539,120 @@
         <div id="strikes-info"></div>
         <div id="summary"></div>
         <div id="results"></div>
+        </div>
+        <!-- End Single Pair Analysis Tab -->
+
+        <!-- Batch Analysis Tab -->
+        <div id="batch-tab" class="tab-content">
+            <h2>Batch Analysis - Multiple Currency Pairs</h2>
+
+            <!-- Upload Section -->
+            <div class="upload-section">
+                <h3>Step 1: Upload Excel File</h3>
+                <input type="file" id="excelFileInput" accept=".xlsx" onchange="handleExcelUpload(event)">
+                <div style="margin-top: 15px;">
+                    <strong>File Requirements:</strong>
+                    <ul style="font-size: 14px; margin: 10px 0;">
+                        <li>Excel file (.xlsx) with two sheets: "Spot Data" and "Implied Vols"</li>
+                        <li>Spot Data: Timestamp column + currency pair columns</li>
+                        <li>Implied Vols: Pair names + ImpliedVol (as decimals, e.g., 0.105 = 10.5%)</li>
+                    </ul>
+                </div>
+
+                <!-- Configuration Options -->
+                <div class="input-section" style="margin-top: 20px; display: none;" id="batchConfigSection">
+                    <div class="input-group">
+                        <label>Base Data Frequency:</label>
+                        <select id="batchBaseFrequency">
+                            <option value="10" selected>10 minutes</option>
+                            <option value="30">30 minutes</option>
+                            <option value="60">60 minutes</option>
+                            <option value="120">120 minutes</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Hedging Frequency:</label>
+                        <select id="batchHedgeFrequency">
+                            <option value="10" selected>10 minutes</option>
+                            <option value="30">30 minutes</option>
+                            <option value="60">60 minutes</option>
+                            <option value="120">120 minutes</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Option Expiry:</label>
+                        <div style="margin-top: 5px;">
+                            <label style="font-weight: normal; display: block; margin-bottom: 5px;">
+                                <input type="radio" name="batchExpiryMode" value="atEnd" checked>
+                                At end of spot series
+                            </label>
+                            <label style="font-weight: normal; display: block;">
+                                <input type="radio" name="batchExpiryMode" value="custom">
+                                Custom: <input type="number" id="batchCustomExpiryValue" value="48" min="0.1" step="0.1" style="width: 80px; margin-left: 5px;" disabled>
+                                <select id="batchCustomExpiryUnit" style="width: 90px;" disabled>
+                                    <option value="hours">Hours</option>
+                                    <option value="minutes">Minutes</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload Status -->
+            <div id="uploadStatus"></div>
+
+            <!-- Pair Selection -->
+            <div id="pairSelectionSection" style="display: none;">
+                <h3>Step 2: Select Currency Pairs to Analyze</h3>
+                <div style="margin: 10px 0;">
+                    <button onclick="selectAllPairs()" class="secondary">Select All</button>
+                    <button onclick="deselectAllPairs()" class="secondary">Deselect All</button>
+                    <span id="pairSelectionCount" style="margin-left: 20px; font-weight: bold;">Selected: 0 pairs</span>
+                </div>
+                <div id="pairCheckboxGrid" class="pair-selection-grid">
+                    <!-- Checkboxes will be populated here -->
+                </div>
+                <button onclick="startBatchCalculation()" style="margin-top: 20px;">Calculate All Selected Pairs</button>
+            </div>
+
+            <!-- Progress Section -->
+            <div id="progressSection" class="progress-container">
+                <div id="progressText">Calculating...</div>
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill" style="width: 0%;">0%</div>
+                </div>
+                <div id="currentPairText"></div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="batchResults" style="display: none;">
+                <h2>Results</h2>
+
+                <!-- Top 5 / Bottom 5 Rankings -->
+                <div id="rankingsSection">
+                    <h3 style="text-align: center; background-color: #007bff; color: white; padding: 15px; border-radius: 8px; margin-top: 30px;">TOP 5 PERFORMERS</h3>
+                    <div id="top5Table"></div>
+
+                    <h3 style="text-align: center; background-color: #dc3545; color: white; padding: 15px; border-radius: 8px; margin-top: 30px;">BOTTOM 5 PERFORMERS</h3>
+                    <div id="bottom5Table"></div>
+                </div>
+
+                <!-- Currency Groups -->
+                <div id="currencyGroupsSection">
+                    <h2 style="margin-top: 40px;">Currency Groups</h2>
+                    <div id="currencyGroupsContent"></div>
+                </div>
+
+                <!-- Expandable Details -->
+                <div id="expandableDetailsSection">
+                    <h2 style="margin-top: 40px;">Pair Details (Click to Expand)</h2>
+                    <div id="expandableDetailsContent"></div>
+                </div>
+            </div>
+        </div>
+        <!-- End Batch Analysis Tab -->
+
     </div>
 
     <script>
@@ -425,6 +662,513 @@
         const MAX_POINTS = 10000; // Maximum data points (reasonable limit)
         const MAX_CUSTOM_STRIKES = 5;
         let customStrikeCounter = 0;
+
+        // ============ TAB SWITCHING ============
+
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Show selected tab
+            if (tabName === 'single-pair') {
+                document.getElementById('single-pair-tab').classList.add('active');
+                document.querySelectorAll('.tab-button')[0].classList.add('active');
+            } else if (tabName === 'batch') {
+                document.getElementById('batch-tab').classList.add('active');
+                document.querySelectorAll('.tab-button')[1].classList.add('active');
+            }
+        }
+
+        // ============ BATCH ANALYSIS FUNCTIONS ============
+
+        let batchData = {
+            timestamps: [],
+            frequency: 10,
+            pairNames: [],
+            spotPrices: {},
+            impliedVols: {},
+            results: {}
+        };
+
+        function handleExcelUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+
+                    // Check for required sheets
+                    if (!workbook.SheetNames.includes('Spot Data')) {
+                        showBatchMessage('Error: Excel file must contain a sheet named "Spot Data"', 'error');
+                        return;
+                    }
+                    if (!workbook.SheetNames.includes('Implied Vols')) {
+                        showBatchMessage('Error: Excel file must contain a sheet named "Implied Vols"', 'error');
+                        return;
+                    }
+
+                    // Parse Spot Data sheet
+                    const spotSheet = workbook.Sheets['Spot Data'];
+                    const spotData = XLSX.utils.sheet_to_json(spotSheet);
+
+                    if (spotData.length < MIN_POINTS) {
+                        showBatchMessage(`Error: Minimum ${MIN_POINTS} data points required, got ${spotData.length}`, 'error');
+                        return;
+                    }
+
+                    // Extract timestamps
+                    batchData.timestamps = spotData.map(row => row.Timestamp || row.timestamp);
+
+                    // Auto-detect frequency
+                    batchData.frequency = detectFrequency(batchData.timestamps);
+
+                    // Extract currency pairs (all columns except Timestamp)
+                    const allKeys = Object.keys(spotData[0]);
+                    batchData.pairNames = allKeys.filter(key =>
+                        key !== 'Timestamp' && key !== 'timestamp' && key.trim() !== ''
+                    );
+
+                    // Extract spot prices for each pair
+                    batchData.spotPrices = {};
+                    batchData.pairNames.forEach(pair => {
+                        const prices = spotData.map(row => parseFloat(row[pair]));
+                        // Validate all prices are positive numbers
+                        if (prices.some(p => isNaN(p) || p <= 0)) {
+                            throw new Error(`Invalid spot prices found for pair: ${pair}`);
+                        }
+                        batchData.spotPrices[pair] = prices;
+                    });
+
+                    // Parse Implied Vols sheet
+                    const volSheet = workbook.Sheets['Implied Vols'];
+                    const volData = XLSX.utils.sheet_to_json(volSheet);
+
+                    batchData.impliedVols = {};
+                    volData.forEach(row => {
+                        const pairName = row.Pair || row.pair;
+                        const volValue = parseFloat(row.ImpliedVol || row.impliedvol || row.impliedVol);
+
+                        if (isNaN(volValue) || volValue <= 0) {
+                            throw new Error(`Invalid implied vol for pair: ${pairName}`);
+                        }
+
+                        batchData.impliedVols[pairName] = volValue;
+                    });
+
+                    // Validate all pairs have implied vols
+                    const missingVols = batchData.pairNames.filter(pair => !batchData.impliedVols[pair]);
+                    if (missingVols.length > 0) {
+                        showBatchMessage(`Error: Missing implied vols for pairs: ${missingVols.join(', ')}`, 'error');
+                        return;
+                    }
+
+                    // Calculate time period
+                    const numPoints = batchData.timestamps.length;
+                    const totalMinutes = (numPoints - 1) * batchData.frequency;
+                    const totalHours = totalMinutes / 60;
+
+                    // Show success message
+                    showBatchMessage(
+                        `✓ Excel file uploaded successfully<br>` +
+                        `✓ Detected ${numPoints} time points (${totalMinutes} minutes = ${totalHours.toFixed(1)} hours)<br>` +
+                        `✓ Frequency auto-detected: ${batchData.frequency} minutes<br>` +
+                        `✓ Found ${batchData.pairNames.length} currency pairs with complete data`,
+                        'verification'
+                    );
+
+                    // Show configuration and pair selection
+                    document.getElementById('batchConfigSection').style.display = 'grid';
+                    document.getElementById('batchBaseFrequency').value = batchData.frequency;
+                    populatePairCheckboxes();
+                    document.getElementById('pairSelectionSection').style.display = 'block';
+
+                } catch (error) {
+                    showBatchMessage(`Error parsing Excel file: ${error.message}`, 'error');
+                    console.error('Excel parsing error:', error);
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        function detectFrequency(timestamps) {
+            if (timestamps.length < 2) return 10;
+
+            // Parse first two timestamps
+            const t1 = new Date(timestamps[0]);
+            const t2 = new Date(timestamps[1]);
+
+            // Calculate difference in minutes
+            const diffMinutes = (t2 - t1) / (1000 * 60);
+
+            return Math.round(diffMinutes);
+        }
+
+        function populatePairCheckboxes() {
+            const grid = document.getElementById('pairCheckboxGrid');
+            grid.innerHTML = '';
+
+            batchData.pairNames.forEach(pair => {
+                const label = document.createElement('label');
+                label.className = 'pair-checkbox';
+                label.innerHTML = `
+                    <input type="checkbox" class="pair-checkbox-input" value="${pair}" onchange="updatePairCount()" checked>
+                    <span>${pair}</span>
+                `;
+                grid.appendChild(label);
+            });
+
+            updatePairCount();
+        }
+
+        function selectAllPairs() {
+            document.querySelectorAll('.pair-checkbox-input').forEach(cb => cb.checked = true);
+            updatePairCount();
+        }
+
+        function deselectAllPairs() {
+            document.querySelectorAll('.pair-checkbox-input').forEach(cb => cb.checked = false);
+            updatePairCount();
+        }
+
+        function updatePairCount() {
+            const checked = document.querySelectorAll('.pair-checkbox-input:checked').length;
+            document.getElementById('pairSelectionCount').textContent = `Selected: ${checked} pairs`;
+        }
+
+        function showBatchMessage(message, type = 'verification') {
+            const div = document.getElementById('uploadStatus');
+            div.innerHTML = `<div class="${type}" style="margin: 10px 0;">${message}</div>`;
+        }
+
+        async function startBatchCalculation() {
+            // Get selected pairs
+            const selectedPairs = Array.from(document.querySelectorAll('.pair-checkbox-input:checked'))
+                .map(cb => cb.value);
+
+            if (selectedPairs.length === 0) {
+                showBatchMessage('Error: Please select at least one currency pair', 'error');
+                return;
+            }
+
+            // Hide pair selection, show progress
+            document.getElementById('pairSelectionSection').style.display = 'none';
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('batchResults').style.display = 'none';
+
+            // Get configuration
+            const baseFreq = parseInt(document.getElementById('batchBaseFrequency').value);
+            const hedgeFreq = parseInt(document.getElementById('batchHedgeFrequency').value);
+
+            // Get option expiry settings
+            const expiryMode = document.querySelector('input[name="batchExpiryMode"]:checked').value;
+            let optionTenorMinutes;
+
+            if (expiryMode === 'custom') {
+                const customValue = parseFloat(document.getElementById('batchCustomExpiryValue').value);
+                const customUnit = document.getElementById('batchCustomExpiryUnit').value;
+                optionTenorMinutes = (customUnit === 'hours') ? customValue * 60 : customValue;
+            }
+
+            // Initialize results
+            batchData.results = {};
+
+            // Calculate for each pair sequentially
+            for (let i = 0; i < selectedPairs.length; i++) {
+                const pair = selectedPairs[i];
+                const progress = ((i + 1) / selectedPairs.length) * 100;
+
+                // Update progress
+                document.getElementById('progressFill').style.width = progress + '%';
+                document.getElementById('progressFill').textContent = Math.round(progress) + '%';
+                document.getElementById('currentPairText').textContent = `Currently processing: ${pair}`;
+
+                // Calculate P&L for this pair
+                try {
+                    const result = await calculatePairPnL(pair, baseFreq, hedgeFreq, optionTenorMinutes, expiryMode);
+                    batchData.results[pair] = result;
+                } catch (error) {
+                    console.error(`Error calculating ${pair}:`, error);
+                    batchData.results[pair] = { error: error.message };
+                }
+
+                // Allow UI to update
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+
+            // Hide progress, show results
+            document.getElementById('progressSection').style.display = 'none';
+            document.getElementById('batchResults').style.display = 'block';
+
+            // Display results
+            displayBatchResults();
+        }
+
+        async function calculatePairPnL(pairName, baseFreq, hedgeFreq, optionTenorMinutes, expiryMode) {
+            const spots = batchData.spotPrices[pairName];
+            const impliedVol = batchData.impliedVols[pairName];
+
+            // Calculate time period
+            const numPoints = spots.length;
+            const totalMinutes = (numPoints - 1) * baseFreq;
+            const totalHours = totalMinutes / 60;
+            const totalDays = totalHours / 24;
+
+            // Determine option tenor
+            let optionTenorYears;
+            if (expiryMode === 'custom' && optionTenorMinutes) {
+                optionTenorYears = optionTenorMinutes / (365 * 24 * 60);
+            } else {
+                optionTenorMinutes = totalMinutes;
+                optionTenorYears = totalDays / 365;
+            }
+
+            // Calculate hedge times
+            const lastCalculationMinutes = Math.min(totalMinutes, optionTenorMinutes);
+            const hedgeTimes = calculateHedgeTimes(lastCalculationMinutes, hedgeFreq);
+
+            // Calculate realized volatility
+            const realizedVol = calculateRealizedVolatility(spots, totalDays, hedgeTimes, baseFreq);
+
+            // Calculate strikes (5 standard strikes only for batch mode)
+            const S0 = spots[0];
+            const strikes = [
+                { name: '10Δ Put', strike: calculateStrikeFromDelta(S0, impliedVol, optionTenorYears, -0.10), type: 'put' },
+                { name: '25Δ Put', strike: calculateStrikeFromDelta(S0, impliedVol, optionTenorYears, -0.25), type: 'put' },
+                { name: 'ATM Call', strike: S0, type: 'call' },
+                { name: '25Δ Call', strike: calculateStrikeFromDelta(S0, impliedVol, optionTenorYears, 0.25), type: 'call' },
+                { name: '10Δ Call', strike: calculateStrikeFromDelta(S0, impliedVol, optionTenorYears, 0.10), type: 'call' }
+            ];
+
+            // Calculate P&L for each strike
+            const strikePnLs = {};
+            let totalPnL = 0;
+
+            strikes.forEach(s => {
+                const baseNotional = SETTLEMENT_NOTIONAL / s.strike;
+                const pnlData = calculateStrikePnL(spots, s.strike, impliedVol, s.type, baseNotional, totalMinutes, hedgeTimes, baseFreq, optionTenorMinutes);
+                const finalPnL = pnlData[pnlData.length - 1].portfolioValue;
+                strikePnLs[s.name] = {
+                    strikePrice: s.strike,
+                    finalPnL: finalPnL,
+                    pnlData: pnlData // Store for chart viewing
+                };
+                totalPnL += finalPnL;
+            });
+
+            const avgPnL = totalPnL / strikes.length;
+
+            return {
+                avgPnL: avgPnL,
+                strikes: strikePnLs,
+                realizedVol: realizedVol,
+                impliedVol: impliedVol,
+                volDiff: realizedVol - impliedVol,
+                spotData: spots,
+                baseFreq: baseFreq,
+                hedgeFreq: hedgeFreq,
+                totalMinutes: totalMinutes
+            };
+        }
+
+        function displayBatchResults() {
+            // Sort pairs by avgPnL
+            const pairResults = Object.entries(batchData.results)
+                .filter(([_, result]) => !result.error)
+                .sort((a, b) => b[1].avgPnL - a[1].avgPnL);
+
+            // Display Top 5 / Bottom 5
+            displayRankings(pairResults);
+
+            // Display Currency Groups
+            displayCurrencyGroups(pairResults);
+
+            // Display Expandable Details
+            displayExpandableDetails(pairResults);
+        }
+
+        function displayRankings(pairResults) {
+            const top5 = pairResults.slice(0, 5);
+            const bottom5 = pairResults.slice(-5).reverse();
+
+            document.getElementById('top5Table').innerHTML = generateRankingTable(top5, 1);
+            document.getElementById('bottom5Table').innerHTML = generateRankingTable(bottom5, pairResults.length - 4);
+        }
+
+        function generateRankingTable(pairs, startRank) {
+            let html = '<table class="ranking-table" style="width: 100%; border-collapse: collapse; margin: 10px 0;"><thead><tr>';
+            html += '<th>Rank</th><th>Pair</th><th>Avg P&L</th>';
+            html += '<th>10Δ Put</th><th>25Δ Put</th><th>ATM Call</th><th>25Δ Call</th><th>10Δ Call</th>';
+            html += '<th>Real Vol</th><th>Impl Vol</th><th>Vol Diff</th>';
+            html += '</tr></thead><tbody>';
+
+            pairs.forEach(([pair, result], idx) => {
+                const rank = startRank + idx;
+                const avgColor = getPnLColor(result.avgPnL * 1000);
+
+                html += '<tr>';
+                html += `<td>${rank}</td>`;
+                html += `<td style="font-weight: bold;">${pair}</td>`;
+                html += `<td style="background-color: ${avgColor.bg}; color: ${avgColor.text}; font-weight: bold;">${formatThousand(result.avgPnL)}</td>`;
+
+                // Individual strike P&Ls
+                ['10Δ Put', '25Δ Put', 'ATM Call', '25Δ Call', '10Δ Call'].forEach(strikeName => {
+                    const pnl = result.strikes[strikeName].finalPnL;
+                    const color = getPnLColor(pnl);
+                    html += `<td style="background-color: ${color.bg}; color: ${color.text};">${formatThousand(pnl)}</td>`;
+                });
+
+                html += `<td>${(result.realizedVol * 100).toFixed(2)}%</td>`;
+                html += `<td>${(result.impliedVol * 100).toFixed(2)}%</td>`;
+                html += `<td>${result.volDiff >= 0 ? '+' : ''}${(result.volDiff * 100).toFixed(2)}pp</td>`;
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            return html;
+        }
+
+        function displayCurrencyGroups(pairResults) {
+            const currencies = ['USD', 'EUR', 'JPY', 'GBP', 'AUD', 'NZD', 'CAD', 'CHF', 'SEK', 'NOK', 'DKK'];
+            const groups = {};
+
+            // Group pairs by currency
+            currencies.forEach(currency => {
+                groups[currency] = pairResults.filter(([pair, _]) => pair.includes(currency));
+            });
+
+            // Generate HTML for each non-empty group
+            let html = '';
+            Object.entries(groups).forEach(([currency, pairs]) => {
+                if (pairs.length === 0) return;
+
+                // Calculate group average
+                const groupAvg = pairs.reduce((sum, [_, result]) => sum + result.avgPnL, 0) / pairs.length;
+
+                html += `<div class="currency-group-section">`;
+                html += `<h3 style="text-align: center; background-color: #007bff; color: white; padding: 10px; border-radius: 4px;">${currency} PAIRS</h3>`;
+                html += generateCurrencyGroupTable(pairs);
+                html += `<div style="margin-top: 10px; font-weight: bold; font-size: 16px;">Group Average: ${formatThousand(groupAvg * 1000)}</div>`;
+                html += `</div>`;
+            });
+
+            document.getElementById('currencyGroupsContent').innerHTML = html;
+        }
+
+        function generateCurrencyGroupTable(pairs) {
+            let html = '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;"><thead><tr>';
+            html += '<th>Pair</th><th>Avg P&L</th>';
+            html += '<th>10Δ Put</th><th>25Δ Put</th><th>ATM Call</th><th>25Δ Call</th><th>10Δ Call</th>';
+            html += '<th>Real Vol</th><th>Impl Vol</th><th>Vol Diff</th>';
+            html += '</tr></thead><tbody>';
+
+            pairs.forEach(([pair, result]) => {
+                const avgColor = getPnLColor(result.avgPnL * 1000);
+
+                html += '<tr>';
+                html += `<td style="font-weight: bold;">${pair}</td>`;
+                html += `<td style="background-color: ${avgColor.bg}; color: ${avgColor.text}; font-weight: bold;">${formatThousand(result.avgPnL)}</td>`;
+
+                ['10Δ Put', '25Δ Put', 'ATM Call', '25Δ Call', '10Δ Call'].forEach(strikeName => {
+                    const pnl = result.strikes[strikeName].finalPnL;
+                    const color = getPnLColor(pnl);
+                    html += `<td style="background-color: ${color.bg}; color: ${color.text};">${formatThousand(pnl)}</td>`;
+                });
+
+                html += `<td>${(result.realizedVol * 100).toFixed(2)}%</td>`;
+                html += `<td>${(result.impliedVol * 100).toFixed(2)}%</td>`;
+                html += `<td>${result.volDiff >= 0 ? '+' : ''}${(result.volDiff * 100).toFixed(2)}pp</td>`;
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            return html;
+        }
+
+        function displayExpandableDetails(pairResults) {
+            let html = '';
+
+            pairResults.forEach(([pair, result]) => {
+                const avgColor = getPnLColor(result.avgPnL * 1000);
+
+                html += `<div class="expandable-pair">`;
+                html += `<div class="pair-header" onclick="togglePairDetails('${pair}')">`;
+                html += `<span style="font-weight: bold; font-size: 16px;">▶ ${pair}</span>`;
+                html += `<span style="background-color: ${avgColor.bg}; color: ${avgColor.text}; padding: 5px 10px; border-radius: 4px; font-weight: bold;">Avg P&L: ${formatThousand(result.avgPnL)}</span>`;
+                html += `</div>`;
+                html += `<div class="pair-details" id="details-${pair}">`;
+
+                // Strike P&L Summary Table
+                html += '<h4>Strike P&L Summary:</h4>';
+                html += '<table style="width: 100%; border-collapse: collapse;"><thead><tr><th></th>';
+
+                ['10Δ Put', '25Δ Put', 'ATM Call', '25Δ Call', '10Δ Call'].forEach(strikeName => {
+                    const strikePrice = result.strikes[strikeName].strikePrice;
+                    html += `<th>${strikePrice.toFixed(4)}</th>`;
+                });
+                html += '</tr></thead><tbody><tr><td><strong>Strike</strong></td>';
+
+                ['10Δ Put', '25Δ Put', 'ATM Call', '25Δ Call', '10Δ Call'].forEach(strikeName => {
+                    html += `<td>${strikeName}</td>`;
+                });
+                html += '</tr><tr><td><strong>P&L (k)</strong></td>';
+
+                ['10Δ Put', '25Δ Put', 'ATM Call', '25Δ Call', '10Δ Call'].forEach(strikeName => {
+                    const pnl = result.strikes[strikeName].finalPnL;
+                    const color = getPnLColor(pnl);
+                    html += `<td style="background-color: ${color.bg}; color: ${color.text}; font-weight: bold;">${formatThousand(pnl)}</td>`;
+                });
+                html += '</tr></tbody></table>';
+
+                // Summary stats
+                html += `<div style="margin-top: 15px; padding: 10px; background-color: #f9f9f9; border-radius: 4px;">`;
+                html += `<strong>Summary:</strong> `;
+                html += `Avg P&L: ${formatThousand(result.avgPnL)} | `;
+                html += `Impl Vol: ${(result.impliedVol * 100).toFixed(2)}% | `;
+                html += `Real Vol: ${(result.realizedVol * 100).toFixed(2)}% | `;
+                html += `Vol Diff: ${result.volDiff >= 0 ? '+' : ''}${(result.volDiff * 100).toFixed(2)}pp`;
+                html += `</div>`;
+
+                // View Charts button
+                html += `<button style="margin-top: 15px;" onclick="showBatchPairCharts('${pair}')">View P&L Charts</button>`;
+
+                html += `</div>`;
+                html += `</div>`;
+            });
+
+            document.getElementById('expandableDetailsContent').innerHTML = html;
+        }
+
+        function togglePairDetails(pair) {
+            const detailsDiv = document.getElementById(`details-${pair}`);
+            const header = detailsDiv.previousElementSibling;
+            const arrow = header.querySelector('span:first-child');
+
+            if (detailsDiv.classList.contains('expanded')) {
+                detailsDiv.classList.remove('expanded');
+                arrow.textContent = `▶ ${pair}`;
+            } else {
+                detailsDiv.classList.add('expanded');
+                arrow.textContent = `▼ ${pair}`;
+            }
+        }
+
+        function showBatchPairCharts(pair) {
+            // This would open the same chart modal as single-pair mode
+            // showing charts for all 5 strikes for the selected pair
+            alert(`Chart viewing for ${pair} - Implementation would show P&L path charts for all strikes`);
+            // TODO: Implement chart viewing by reusing single-pair chart generation
+        }
 
         // ============ STRIKE CALCULATION - EXACT CODE ============
 
