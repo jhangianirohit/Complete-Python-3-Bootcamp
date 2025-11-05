@@ -352,9 +352,9 @@
             <div class="input-group">
                 <label>Hedging Frequency (minutes):</label>
                 <select id="hedgeFrequency">
-                    <option value="10">10 minutes</option>
+                    <option value="10" selected>10 minutes</option>
                     <option value="30">30 minutes</option>
-                    <option value="60" selected>60 minutes</option>
+                    <option value="60">60 minutes</option>
                     <option value="120">120 minutes</option>
                 </select>
             </div>
@@ -370,7 +370,11 @@
                     </label>
                     <label style="font-weight: normal; display: block;">
                         <input type="radio" name="expiryMode" value="custom" onchange="toggleExpiryMode()">
-                        Custom: <input type="number" id="customExpiryHours" value="48" min="0.1" step="0.1" style="width: 80px; margin-left: 5px;" disabled> hours
+                        Custom: <input type="number" id="customExpiryValue" value="48" min="0.1" step="0.1" style="width: 80px; margin-left: 5px;" disabled>
+                        <select id="customExpiryUnit" style="width: 90px;" disabled>
+                            <option value="hours">Hours</option>
+                            <option value="minutes">Minutes</option>
+                        </select>
                     </label>
                 </div>
             </div>
@@ -643,15 +647,18 @@
 
         function toggleExpiryMode() {
             const customRadio = document.querySelector('input[name="expiryMode"][value="custom"]');
-            const customInput = document.getElementById('customExpiryHours');
+            const customInput = document.getElementById('customExpiryValue');
+            const customUnit = document.getElementById('customExpiryUnit');
             const calculationsDiv = document.getElementById('expiryCalculations');
 
             if (customRadio.checked) {
                 customInput.disabled = false;
+                customUnit.disabled = false;
                 calculationsDiv.style.display = 'block';
                 updateExpiryCalculations();
             } else {
                 customInput.disabled = true;
+                customUnit.disabled = true;
                 calculationsDiv.style.display = 'none';
             }
         }
@@ -659,8 +666,9 @@
         function updateExpiryCalculations() {
             // This will be called during calculate() to show spot series length
             // and time remaining. Placeholder for now.
-            const customExpiryHours = parseFloat(document.getElementById('customExpiryHours').value);
-            if (!isNaN(customExpiryHours)) {
+            const customExpiryValue = parseFloat(document.getElementById('customExpiryValue').value);
+            const customExpiryUnit = document.getElementById('customExpiryUnit').value;
+            if (!isNaN(customExpiryValue)) {
                 document.getElementById('spotSeriesLengthDisplay').textContent = '• Spot Series Length: (will calculate when you click Calculate)';
                 document.getElementById('timeRemainingDisplay').textContent = '• Time Remaining at End: (will calculate when you click Calculate)';
             }
@@ -1059,13 +1067,18 @@
             let optionTenorHours, optionTenorYears, optionTenorMinutes, lastCalculationMinutes;
 
             if (expiryMode === 'custom') {
-                optionTenorHours = parseFloat(document.getElementById('customExpiryHours').value);
-                if (isNaN(optionTenorHours) || optionTenorHours <= 0) {
+                const customExpiryValue = parseFloat(document.getElementById('customExpiryValue').value);
+                const customExpiryUnit = document.getElementById('customExpiryUnit').value;
+
+                if (isNaN(customExpiryValue) || customExpiryValue <= 0) {
                     showValidationMessage('Error: Option expiry must be a positive number', 'error');
                     return;
                 }
-                optionTenorMinutes = optionTenorHours * 60;
-                optionTenorYears = optionTenorHours / (365 * 24);
+
+                // Convert to minutes based on unit
+                optionTenorMinutes = (customExpiryUnit === 'hours') ? customExpiryValue * 60 : customExpiryValue;
+                optionTenorHours = optionTenorMinutes / 60;
+                optionTenorYears = optionTenorMinutes / (365 * 24 * 60);
 
                 // Update display
                 lastCalculationMinutes = Math.min(totalMinutes, optionTenorMinutes);
