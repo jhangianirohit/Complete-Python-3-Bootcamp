@@ -583,13 +583,13 @@
                         <label>Option Expiry:</label>
                         <div style="margin-top: 5px;">
                             <label style="font-weight: normal; display: block; margin-bottom: 5px;">
-                                <input type="radio" name="batchExpiryMode" value="atEnd" checked onchange="toggleBatchExpiryMode()">
+                                <input type="radio" id="endOfSeriesRadio" name="batchExpiryMode" value="atEnd" checked>
                                 At end of spot series
                             </label>
                             <label style="font-weight: normal; display: block;">
-                                <input type="radio" name="batchExpiryMode" value="custom" onchange="toggleBatchExpiryMode()">
-                                Custom: <input type="number" id="batchCustomExpiryValue" value="48" min="0.1" step="0.1" style="width: 80px; margin-left: 5px;" disabled>
-                                <select id="batchCustomExpiryUnit" style="width: 90px;" disabled>
+                                <input type="radio" id="customExpiryRadio" name="batchExpiryMode" value="custom">
+                                Custom: <input type="number" id="customExpiryInput" value="48" min="0.1" step="0.1" style="width: 80px; margin-left: 5px;" disabled>
+                                <select id="customExpiryUnit" style="width: 90px;" disabled>
                                     <option value="hours">Hours</option>
                                     <option value="minutes">Minutes</option>
                                 </select>
@@ -607,33 +607,37 @@
                 <h3>Analysis Window</h3>
                 <div style="margin: 15px 0;">
                     <label style="font-weight: normal; display: block; margin-bottom: 10px;">
-                        <input type="checkbox" id="useEntireDataset" checked onchange="toggleAnalysisWindow()">
+                        <input type="radio" id="useEntireDataset" name="analysisWindowMode" value="entire" checked>
                         Use entire dataset (default)
                     </label>
 
-                    <div id="customWindowInputs" style="margin-left: 25px; opacity: 0.5;">
-                        <label style="font-weight: normal; display: block; margin-bottom: 5px;">
-                            <input type="checkbox" id="useCustomWindow" onchange="toggleAnalysisWindow()" disabled>
-                            Custom window:
-                        </label>
+                    <label style="font-weight: normal; display: block; margin-bottom: 10px;">
+                        <input type="radio" id="useCustomWindow" name="analysisWindowMode" value="custom">
+                        Custom window:
+                    </label>
 
-                        <div style="margin-left: 25px; margin-top: 10px;">
-                            <div style="margin-bottom: 10px;">
-                                <strong>Start:</strong>
-                                <input type="date" id="analysisStartDate" style="margin-left: 10px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
-                                <input type="time" id="analysisStartTime" step="600" style="margin-left: 5px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
-                            </div>
-                            <div style="margin-bottom: 10px;">
-                                <strong>End:</strong>
-                                <input type="date" id="analysisEndDate" style="margin-left: 10px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
-                                <input type="time" id="analysisEndTime" step="600" style="margin-left: 5px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
-                            </div>
+                    <div id="customWindowInputs" style="margin-left: 25px; margin-top: 10px;">
+                        <table style="border-spacing: 10px 5px;">
+                            <tr>
+                                <td style="text-align: right; padding-right: 10px;"><strong>Start:</strong></td>
+                                <td>
+                                    <input type="date" id="analysisStartDate" style="padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
+                                    <input type="time" id="analysisStartTime" step="600" style="margin-left: 5px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="text-align: right; padding-right: 10px;"><strong>End:</strong></td>
+                                <td>
+                                    <input type="date" id="analysisEndDate" style="padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
+                                    <input type="time" id="analysisEndTime" step="600" style="margin-left: 5px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
+                                </td>
+                            </tr>
+                        </table>
+
+                        <div id="windowPreview" style="margin-top: 15px; padding: 10px; background-color: #e8f4f8; border-left: 3px solid #007bff; border-radius: 4px; font-size: 14px;">
+                            <!-- Preview will be populated here -->
                         </div>
                     </div>
-                </div>
-
-                <div id="windowPreview" style="margin-top: 15px; padding: 10px; background-color: #e8f4f8; border-left: 3px solid #007bff; border-radius: 4px; font-size: 14px;">
-                    <!-- Preview will be populated here -->
                 </div>
             </div>
 
@@ -942,11 +946,11 @@
         }
 
         function toggleBatchExpiryMode() {
-            const customRadio = document.querySelector('input[name="batchExpiryMode"][value="custom"]');
-            const customInput = document.getElementById('batchCustomExpiryValue');
-            const customUnit = document.getElementById('batchCustomExpiryUnit');
+            const customRadio = document.getElementById('customExpiryRadio');
+            const customInput = document.getElementById('customExpiryInput');
+            const customUnit = document.getElementById('customExpiryUnit');
 
-            if (customRadio.checked) {
+            if (customRadio && customRadio.checked) {
                 customInput.disabled = false;
                 customUnit.disabled = false;
                 customInput.focus();
@@ -955,6 +959,19 @@
                 customUnit.disabled = true;
             }
         }
+
+        // Add event listeners for batch expiry radio buttons
+        document.addEventListener('DOMContentLoaded', function() {
+            const endOfSeriesRadio = document.getElementById('endOfSeriesRadio');
+            const customExpiryRadio = document.getElementById('customExpiryRadio');
+
+            if (endOfSeriesRadio) {
+                endOfSeriesRadio.addEventListener('change', toggleBatchExpiryMode);
+            }
+            if (customExpiryRadio) {
+                customExpiryRadio.addEventListener('change', toggleBatchExpiryMode);
+            }
+        });
 
         function formatDateTime(timestamp) {
             const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
@@ -1000,8 +1017,7 @@
         }
 
         function toggleAnalysisWindow() {
-            const useEntire = document.getElementById('useEntireDataset').checked;
-            const useCustom = document.getElementById('useCustomWindow');
+            const useCustom = document.getElementById('useCustomWindow').checked;
             const customInputsDiv = document.getElementById('customWindowInputs');
 
             const startDate = document.getElementById('analysisStartDate');
@@ -1009,27 +1025,98 @@
             const endDate = document.getElementById('analysisEndDate');
             const endTime = document.getElementById('analysisEndTime');
 
-            if (useEntire) {
-                // Disable custom inputs
-                useCustom.disabled = true;
-                useCustom.checked = false;
-                customInputsDiv.style.opacity = '0.5';
-                startDate.disabled = true;
-                startTime.disabled = true;
-                endDate.disabled = true;
-                endTime.disabled = true;
-            } else {
+            if (useCustom) {
                 // Enable custom inputs
-                useCustom.disabled = false;
-                useCustom.checked = true;
                 customInputsDiv.style.opacity = '1';
                 startDate.disabled = false;
                 startTime.disabled = false;
                 endDate.disabled = false;
                 endTime.disabled = false;
+            } else {
+                // Disable custom inputs
+                customInputsDiv.style.opacity = '0.5';
+                startDate.disabled = true;
+                startTime.disabled = true;
+                endDate.disabled = true;
+                endTime.disabled = true;
             }
 
             updateAnalysisWindowPreview();
+        }
+
+        // Add event listeners for analysis window radio buttons
+        document.addEventListener('DOMContentLoaded', function() {
+            const useEntireRadio = document.getElementById('useEntireDataset');
+            const useCustomRadio = document.getElementById('useCustomWindow');
+
+            if (useEntireRadio) {
+                useEntireRadio.addEventListener('change', toggleAnalysisWindow);
+            }
+            if (useCustomRadio) {
+                useCustomRadio.addEventListener('change', toggleAnalysisWindow);
+            }
+
+            // Add event listener for base frequency changes to update hedge frequency options
+            const baseFreqSelect = document.getElementById('batchBaseFrequency');
+            if (baseFreqSelect) {
+                baseFreqSelect.addEventListener('change', updateHedgeFrequencyOptions);
+            }
+        });
+
+        function updateHedgeFrequencyOptions() {
+            const baseFreq = parseInt(document.getElementById('batchBaseFrequency').value);
+            const hedgeFreqSelect = document.getElementById('batchHedgeFrequency');
+
+            if (!hedgeFreqSelect) return;
+
+            // Get current selection
+            const currentHedgeFreq = parseInt(hedgeFreqSelect.value);
+
+            // Disable options that are less than base frequency
+            Array.from(hedgeFreqSelect.options).forEach(option => {
+                const freq = parseInt(option.value);
+                if (freq < baseFreq) {
+                    option.disabled = true;
+                    option.style.color = '#ccc';
+                } else {
+                    option.disabled = false;
+                    option.style.color = '';
+                }
+            });
+
+            // If current selection is now invalid, select the first valid option
+            if (currentHedgeFreq < baseFreq) {
+                // Find first valid option >= baseFreq
+                for (let i = 0; i < hedgeFreqSelect.options.length; i++) {
+                    const freq = parseInt(hedgeFreqSelect.options[i].value);
+                    if (freq >= baseFreq) {
+                        hedgeFreqSelect.value = hedgeFreqSelect.options[i].value;
+                        break;
+                    }
+                }
+            }
+        }
+
+        function validateFrequencies(baseFreq, hedgeFreq) {
+            if (hedgeFreq < baseFreq) {
+                return {
+                    valid: false,
+                    message: `Error: Hedging frequency (${hedgeFreq} min) cannot be less than base data frequency (${baseFreq} min).<br>` +
+                             `This would cause the hedging algorithm to attempt rebalancing between data points, resulting in NaN values.<br>` +
+                             `Please select a hedging frequency >= ${baseFreq} minutes.`
+                };
+            }
+
+            // Warning if hedge frequency is not a multiple of base frequency
+            if (hedgeFreq % baseFreq !== 0) {
+                return {
+                    valid: true,
+                    warning: `Warning: Hedging frequency (${hedgeFreq} min) is not a multiple of base frequency (${baseFreq} min).<br>` +
+                             `Some hedge rebalance times may not align exactly with data timestamps.`
+                };
+            }
+
+            return { valid: true };
         }
 
         function updateAnalysisWindowPreview() {
@@ -1156,13 +1243,27 @@
             const baseFreq = parseInt(document.getElementById('batchBaseFrequency').value);
             const hedgeFreq = parseInt(document.getElementById('batchHedgeFrequency').value);
 
+            // Validate frequencies
+            const freqValidation = validateFrequencies(baseFreq, hedgeFreq);
+            if (!freqValidation.valid) {
+                showBatchMessage(freqValidation.message, 'error');
+                document.getElementById('progressSection').style.display = 'none';
+                document.getElementById('pairSelectionSection').style.display = 'block';
+                return;
+            }
+
+            // Show warning if hedge frequency is not a multiple of base frequency
+            if (freqValidation.warning) {
+                showBatchMessage(freqValidation.warning, 'warning');
+            }
+
             // Get option expiry settings
             const expiryMode = document.querySelector('input[name="batchExpiryMode"]:checked').value;
             let optionTenorMinutes;
 
             if (expiryMode === 'custom') {
-                const customValue = parseFloat(document.getElementById('batchCustomExpiryValue').value);
-                const customUnit = document.getElementById('batchCustomExpiryUnit').value;
+                const customValue = parseFloat(document.getElementById('customExpiryInput').value);
+                const customUnit = document.getElementById('customExpiryUnit').value;
                 optionTenorMinutes = (customUnit === 'hours') ? customValue * 60 : customValue;
             }
 
