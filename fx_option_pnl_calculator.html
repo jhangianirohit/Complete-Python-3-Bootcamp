@@ -602,6 +602,41 @@
             <!-- Upload Status -->
             <div id="uploadStatus"></div>
 
+            <!-- Analysis Window Selection -->
+            <div id="analysisWindowSection" style="display: none; margin: 20px 0; padding: 20px; background-color: #f9f9f9; border-radius: 8px;">
+                <h3>Analysis Window</h3>
+                <div style="margin: 15px 0;">
+                    <label style="font-weight: normal; display: block; margin-bottom: 10px;">
+                        <input type="checkbox" id="useEntireDataset" checked onchange="toggleAnalysisWindow()">
+                        Use entire dataset (default)
+                    </label>
+
+                    <div id="customWindowInputs" style="margin-left: 25px; opacity: 0.5;">
+                        <label style="font-weight: normal; display: block; margin-bottom: 5px;">
+                            <input type="checkbox" id="useCustomWindow" onchange="toggleAnalysisWindow()" disabled>
+                            Custom window:
+                        </label>
+
+                        <div style="margin-left: 25px; margin-top: 10px;">
+                            <div style="margin-bottom: 10px;">
+                                <strong>Start:</strong>
+                                <input type="date" id="analysisStartDate" style="margin-left: 10px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
+                                <input type="time" id="analysisStartTime" step="600" style="margin-left: 5px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <strong>End:</strong>
+                                <input type="date" id="analysisEndDate" style="margin-left: 10px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
+                                <input type="time" id="analysisEndTime" step="600" style="margin-left: 5px; padding: 5px;" disabled onchange="updateAnalysisWindowPreview()">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="windowPreview" style="margin-top: 15px; padding: 10px; background-color: #e8f4f8; border-left: 3px solid #007bff; border-radius: 4px; font-size: 14px;">
+                    <!-- Preview will be populated here -->
+                </div>
+            </div>
+
             <!-- Pair Selection -->
             <div id="pairSelectionSection" style="display: none;">
                 <h3>Step 2: Select Currency Pairs to Analyze</h3>
@@ -780,10 +815,27 @@
                     const totalMinutes = (numPoints - 1) * batchData.frequency;
                     const totalHours = totalMinutes / 60;
 
-                    // Show success message
+                    // Store full data range
+                    const firstTimestamp = batchData.timestamps[0];
+                    const lastTimestamp = batchData.timestamps[batchData.timestamps.length - 1];
+
+                    batchData.fullDataRange = {
+                        start: firstTimestamp,
+                        end: lastTimestamp,
+                        points: numPoints,
+                        minutes: totalMinutes,
+                        hours: totalHours
+                    };
+
+                    // Show success message with time range
+                    const startStr = formatDateTime(firstTimestamp);
+                    const endStr = formatDateTime(lastTimestamp);
+
                     showBatchMessage(
                         `✓ Excel file uploaded successfully<br>` +
-                        `✓ Detected ${numPoints} time points (${totalMinutes} minutes = ${totalHours.toFixed(1)} hours)<br>` +
+                        `✓ Detected ${numPoints} time points<br>` +
+                        `✓ Data Time Range: ${startStr} → ${endStr}<br>` +
+                        `✓ Total Duration: ${totalMinutes} minutes (${totalHours.toFixed(1)} hours)<br>` +
                         `✓ Frequency auto-detected: ${batchData.frequency} minutes<br>` +
                         `✓ Found ${batchData.pairNames.length} currency pairs with complete data`,
                         'verification'
@@ -792,6 +844,8 @@
                     // Show configuration and pair selection
                     document.getElementById('batchConfigSection').style.display = 'grid';
                     document.getElementById('batchBaseFrequency').value = batchData.frequency;
+                    document.getElementById('analysisWindowSection').style.display = 'block';
+                    initializeAnalysisWindow();
                     populatePairCheckboxes();
                     document.getElementById('pairSelectionSection').style.display = 'block';
 
@@ -902,6 +956,187 @@
             }
         }
 
+        function formatDateTime(timestamp) {
+            const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}`;
+        }
+
+        function formatDateForInput(timestamp) {
+            const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function formatTimeForInput(timestamp) {
+            const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${hours}:${minutes}`;
+        }
+
+        function initializeAnalysisWindow() {
+            if (!batchData.fullDataRange) return;
+
+            // Set initial values to full data range
+            const startDate = formatDateForInput(batchData.fullDataRange.start);
+            const startTime = formatTimeForInput(batchData.fullDataRange.start);
+            const endDate = formatDateForInput(batchData.fullDataRange.end);
+            const endTime = formatTimeForInput(batchData.fullDataRange.end);
+
+            document.getElementById('analysisStartDate').value = startDate;
+            document.getElementById('analysisStartTime').value = startTime;
+            document.getElementById('analysisEndDate').value = endDate;
+            document.getElementById('analysisEndTime').value = endTime;
+
+            // Show preview for entire dataset
+            updateAnalysisWindowPreview();
+        }
+
+        function toggleAnalysisWindow() {
+            const useEntire = document.getElementById('useEntireDataset').checked;
+            const useCustom = document.getElementById('useCustomWindow');
+            const customInputsDiv = document.getElementById('customWindowInputs');
+
+            const startDate = document.getElementById('analysisStartDate');
+            const startTime = document.getElementById('analysisStartTime');
+            const endDate = document.getElementById('analysisEndDate');
+            const endTime = document.getElementById('analysisEndTime');
+
+            if (useEntire) {
+                // Disable custom inputs
+                useCustom.disabled = true;
+                useCustom.checked = false;
+                customInputsDiv.style.opacity = '0.5';
+                startDate.disabled = true;
+                startTime.disabled = true;
+                endDate.disabled = true;
+                endTime.disabled = true;
+            } else {
+                // Enable custom inputs
+                useCustom.disabled = false;
+                useCustom.checked = true;
+                customInputsDiv.style.opacity = '1';
+                startDate.disabled = false;
+                startTime.disabled = false;
+                endDate.disabled = false;
+                endTime.disabled = false;
+            }
+
+            updateAnalysisWindowPreview();
+        }
+
+        function updateAnalysisWindowPreview() {
+            if (!batchData.fullDataRange) return;
+
+            const useEntire = document.getElementById('useEntireDataset').checked;
+            const previewDiv = document.getElementById('windowPreview');
+
+            if (useEntire) {
+                // Show entire dataset info
+                previewDiv.innerHTML = `
+                    <strong>Analysis Window:</strong> Entire dataset<br>
+                    → ${batchData.fullDataRange.points} data points<br>
+                    → Duration: ${batchData.fullDataRange.hours.toFixed(1)} hours
+                `;
+            } else {
+                // Get selected window
+                const startDateTime = getSelectedStartDateTime();
+                const endDateTime = getSelectedEndDateTime();
+
+                if (!startDateTime || !endDateTime) {
+                    previewDiv.innerHTML = '<strong>Please select valid start and end times</strong>';
+                    return;
+                }
+
+                // Validate
+                if (startDateTime >= endDateTime) {
+                    previewDiv.innerHTML = '<strong style="color: #dc3545;">Error: Start must be before End</strong>';
+                    return;
+                }
+
+                if (startDateTime < batchData.fullDataRange.start || endDateTime > batchData.fullDataRange.end) {
+                    previewDiv.innerHTML = '<strong style="color: #dc3545;">Error: Window must be within data range</strong>';
+                    return;
+                }
+
+                // Calculate window properties
+                const durationMinutes = (endDateTime - startDateTime) / (1000 * 60);
+                const durationHours = (durationMinutes / 60).toFixed(1);
+
+                // Count data points in window
+                const windowPoints = batchData.timestamps.filter(t => {
+                    const ts = t instanceof Date ? t : new Date(t);
+                    return ts >= startDateTime && ts <= endDateTime;
+                }).length;
+
+                previewDiv.innerHTML = `
+                    <strong>Analysis Window:</strong> Custom<br>
+                    → Duration: ${durationHours} hours (${windowPoints} data points)<br>
+                    → Option initiated at: ${formatDateTime(startDateTime)}<br>
+                    → Analysis ends at: ${formatDateTime(endDateTime)}
+                `;
+            }
+        }
+
+        function getSelectedStartDateTime() {
+            const dateStr = document.getElementById('analysisStartDate').value;
+            const timeStr = document.getElementById('analysisStartTime').value;
+            if (!dateStr || !timeStr) return null;
+            return new Date(`${dateStr}T${timeStr}`);
+        }
+
+        function getSelectedEndDateTime() {
+            const dateStr = document.getElementById('analysisEndDate').value;
+            const timeStr = document.getElementById('analysisEndTime').value;
+            if (!dateStr || !timeStr) return null;
+            return new Date(`${dateStr}T${timeStr}`);
+        }
+
+        function filterDataToAnalysisWindow(fullData, windowStart, windowEnd) {
+            const filteredTimestamps = [];
+            const filteredSpotPrices = {};
+
+            // Initialize spot price arrays
+            Object.keys(fullData.spotPrices).forEach(pair => {
+                filteredSpotPrices[pair] = [];
+            });
+
+            // Filter data points within window
+            fullData.timestamps.forEach((timestamp, index) => {
+                const t = timestamp instanceof Date ? timestamp : new Date(timestamp);
+                if (t >= windowStart && t <= windowEnd) {
+                    filteredTimestamps.push(timestamp);
+
+                    // Add spot prices for all pairs
+                    Object.keys(fullData.spotPrices).forEach(pair => {
+                        filteredSpotPrices[pair].push(fullData.spotPrices[pair][index]);
+                    });
+                }
+            });
+
+            return {
+                timestamps: filteredTimestamps,
+                spotPrices: filteredSpotPrices,
+                pairNames: fullData.pairNames,
+                impliedVols: fullData.impliedVols,
+                frequency: fullData.frequency,
+                fullDataRange: fullData.fullDataRange,
+                analysisWindow: {
+                    start: windowStart,
+                    end: windowEnd,
+                    points: filteredTimestamps.length,
+                    minutes: (windowEnd - windowStart) / (1000 * 60)
+                }
+            };
+        }
+
         async function startBatchCalculation() {
             // Get selected pairs
             const selectedPairs = Array.from(document.querySelectorAll('.pair-checkbox-input:checked'))
@@ -931,8 +1166,66 @@
                 optionTenorMinutes = (customUnit === 'hours') ? customValue * 60 : customValue;
             }
 
+            // Apply analysis window filter
+            const useEntire = document.getElementById('useEntireDataset').checked;
+            let analysisData;
+
+            if (useEntire) {
+                // Use full dataset
+                analysisData = batchData;
+            } else {
+                // Filter to custom window
+                const windowStart = getSelectedStartDateTime();
+                const windowEnd = getSelectedEndDateTime();
+
+                // Validation
+                if (!windowStart || !windowEnd) {
+                    showBatchMessage('Error: Please select valid start and end times', 'error');
+                    document.getElementById('progressSection').style.display = 'none';
+                    document.getElementById('pairSelectionSection').style.display = 'block';
+                    return;
+                }
+
+                if (windowStart >= windowEnd) {
+                    showBatchMessage('Error: Analysis window start must be before end', 'error');
+                    document.getElementById('progressSection').style.display = 'none';
+                    document.getElementById('pairSelectionSection').style.display = 'block';
+                    return;
+                }
+
+                if (windowStart < batchData.fullDataRange.start || windowEnd > batchData.fullDataRange.end) {
+                    showBatchMessage('Error: Analysis window must be within data range', 'error');
+                    document.getElementById('progressSection').style.display = 'none';
+                    document.getElementById('pairSelectionSection').style.display = 'block';
+                    return;
+                }
+
+                // Filter data
+                analysisData = filterDataToAnalysisWindow(batchData, windowStart, windowEnd);
+
+                // Validate filtered data
+                if (analysisData.timestamps.length < 2) {
+                    showBatchMessage('Error: Analysis window must contain at least 2 data points', 'error');
+                    document.getElementById('progressSection').style.display = 'none';
+                    document.getElementById('pairSelectionSection').style.display = 'block';
+                    return;
+                }
+
+                const windowDuration = (windowEnd - windowStart) / (1000 * 60);
+                if (windowDuration < hedgeFreq) {
+                    showBatchMessage('Error: Analysis window duration must be >= hedging frequency', 'error');
+                    document.getElementById('progressSection').style.display = 'none';
+                    document.getElementById('pairSelectionSection').style.display = 'block';
+                    return;
+                }
+            }
+
+            // Store analysis data for use in calculations
+            window.currentAnalysisData = analysisData;
+
             // Initialize results
             batchData.results = {};
+            batchData.analysisWindow = analysisData.analysisWindow || null;
 
             // Calculate for each pair sequentially
             for (let i = 0; i < selectedPairs.length; i++) {
@@ -966,8 +1259,10 @@
         }
 
         async function calculatePairPnL(pairName, baseFreq, hedgeFreq, optionTenorMinutes, expiryMode) {
-            const spots = batchData.spotPrices[pairName];
-            const impliedVol = batchData.impliedVols[pairName];
+            // Use analysis data (which may be filtered)
+            const analysisData = window.currentAnalysisData;
+            const spots = analysisData.spotPrices[pairName];
+            const impliedVol = analysisData.impliedVols[pairName];
 
             // Calculate time period
             const numPoints = spots.length;
